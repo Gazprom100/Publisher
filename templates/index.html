@@ -1,66 +1,135 @@
     <!-- Scripts -->
     <script src="https://cdn.plot.ly/plotly-2.30.1.min.js"></script>
-    <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script>
     document.addEventListener('DOMContentLoaded', function() {
         // Инициализация всех компонентов после загрузки DOM
         const refreshButton = document.getElementById('refreshData');
         if (refreshButton) {
             refreshButton.addEventListener('click', function() {
-                updateAnalytics();
-                updateChannelHealth();
-                updateSchedule();
+                if (socket.connected) {
+                    updateAnalytics();
+                    updateChannelHealth();
+                    updateSchedule();
+                } else {
+                    showError('Нет подключения к серверу');
+                    socket.connect();
+                }
             });
         }
 
         // Инициализация Socket.IO с обработкой ошибок
         const socket = io({
+            transports: ['websocket', 'polling'],
+            upgrade: true,
+            rememberUpgrade: true,
+            timeout: 5000,
             reconnection: true,
             reconnectionAttempts: 5,
             reconnectionDelay: 1000,
-            timeout: 60000,
+            reconnectionDelayMax: 5000,
             autoConnect: true,
-            transports: ['websocket', 'polling']
+            forceNew: true
         });
 
         // Обработчики событий Socket.IO
         socket.on('connect', () => {
             console.log('Connected to server');
-            document.getElementById('connection-status').classList.remove('text-danger');
-            document.getElementById('connection-status').classList.add('text-success');
-            document.getElementById('connection-status').textContent = 'Connected';
+            updateConnectionStatus('connected');
         });
 
-        socket.on('disconnect', () => {
-            console.log('Disconnected from server');
-            document.getElementById('connection-status').classList.remove('text-success');
-            document.getElementById('connection-status').classList.add('text-danger');
-            document.getElementById('connection-status').textContent = 'Disconnected';
+        socket.on('disconnect', (reason) => {
+            console.log('Disconnected from server:', reason);
+            updateConnectionStatus('disconnected');
         });
 
         socket.on('connect_error', (error) => {
             console.error('Connection error:', error);
-            document.getElementById('connection-status').classList.remove('text-success');
-            document.getElementById('connection-status').classList.add('text-danger');
-            document.getElementById('connection-status').textContent = 'Connection Error';
+            updateConnectionStatus('error', error.message);
+        });
+
+        socket.on('error', (error) => {
+            console.error('Socket error:', error);
+            updateConnectionStatus('error', error.message);
+        });
+
+        socket.on('connection_established', (data) => {
+            console.log('Connection established:', data);
+            updateConnectionStatus('connected');
+            // Запрашиваем начальные данные
+            updateAnalytics();
+            updateChannelHealth();
+            updateSchedule();
+        });
+
+        socket.on('analytics_error', (error) => {
+            console.error('Analytics error:', error);
+            showError('Ошибка при получении аналитики: ' + error.message);
         });
 
         socket.on('posts_update', (data) => {
             console.log('Received posts update:', data);
-            updateDashboard(data.posts);
+            if (data && data.posts) {
+                updateDashboard(data.posts);
+            }
         });
 
-        // Обновление данных каждые 5 минут
-        setInterval(() => {
-            updateAnalytics();
-            updateChannelHealth();
-            updateSchedule();
-        }, 300000);
+        // Функция обновления статуса соединения
+        function updateConnectionStatus(status, message = '') {
+            const statusElement = document.getElementById('connection-status');
+            if (!statusElement) return;
 
-        // Первоначальное обновление данных
-        updateAnalytics();
-        updateChannelHealth();
-        updateSchedule();
+            statusElement.className = 'connection-status';
+            switch (status) {
+                case 'connected':
+                    statusElement.textContent = 'Подключено';
+                    statusElement.classList.add('text-success');
+                    break;
+                case 'disconnected':
+                    statusElement.textContent = 'Отключено';
+                    statusElement.classList.add('text-danger');
+                    break;
+                case 'error':
+                    statusElement.textContent = `Ошибка: ${message}`;
+                    statusElement.classList.add('text-danger');
+                    break;
+            }
+        }
+
+        // Функция отображения ошибок
+        function showError(message) {
+            const errorContainer = document.getElementById('error-container');
+            if (!errorContainer) {
+                const container = document.createElement('div');
+                container.id = 'error-container';
+                container.className = 'alert alert-danger alert-dismissible fade show';
+                container.style.position = 'fixed';
+                container.style.top = '20px';
+                container.style.right = '20px';
+                container.style.zIndex = '9999';
+                document.body.appendChild(container);
+            }
+            
+            errorContainer.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            `;
+            
+            // Автоматически скрываем ошибку через 5 секунд
+            setTimeout(() => {
+                const alert = bootstrap.Alert.getOrCreateInstance(errorContainer);
+                alert.close();
+            }, 5000);
+        }
+
+        // Автоматическое обновление данных
+        setInterval(() => {
+            if (socket.connected) {
+                updateAnalytics();
+                updateChannelHealth();
+                updateSchedule();
+            }
+        }, 300000); // Каждые 5 минут
     });
 
     // Функция обновления аналитики

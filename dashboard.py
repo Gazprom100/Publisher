@@ -59,7 +59,7 @@ os.makedirs(TEMPLATE_DIR, exist_ok=True)
 os.makedirs(STATIC_DIR, exist_ok=True)
 
 # Инициализация eventlet
-eventlet.monkey_patch(all=False, socket=True, select=True, thread=True)
+eventlet.monkey_patch(socket=True, select=True)
 
 app = Flask(__name__, 
             template_folder=TEMPLATE_DIR,
@@ -67,31 +67,44 @@ app = Flask(__name__,
 app.config['SECRET_KEY'] = os.urandom(24)
 
 # Обновленные настройки Socket.IO
-socketio = SocketIO(app, 
-                   async_mode='eventlet',
-                   cors_allowed_origins='*',
-                   engineio_logger=True,
-                   logger=True,
-                   ping_timeout=60,
-                   ping_interval=25,
-                   max_http_buffer_size=1000000,
-                   manage_session=True,  # Включаем управление сессиями
-                   reconnection=True,    # Включаем автоматическое переподключение
-                   reconnection_attempts=5,  # Количество попыток переподключения
-                   reconnection_delay=1000,  # Задержка между попытками в миллисекундах
-                   cookie=None)  # Отключаем использование cookie для сессий
+socketio = SocketIO(
+    app,
+    async_mode='eventlet',
+    cors_allowed_origins='*',
+    logger=True,
+    engineio_logger=True,
+    ping_timeout=5000,
+    ping_interval=25000,
+    max_http_buffer_size=1000000,
+    manage_session=True,
+    always_connect=True,
+    transports=['websocket', 'polling']
+)
 
-@socketio.on_error_default
-def default_error_handler(e):
-    logger.error(f"Socket.IO error: {str(e)}")
-
+# Обработчики событий Socket.IO
 @socketio.on('connect')
 def handle_connect():
     logger.info(f"Client connected: {request.sid}")
+    # Отправляем начальные данные при подключении
+    emit('connection_established', {'status': 'connected'})
 
 @socketio.on('disconnect')
 def handle_disconnect():
     logger.info(f"Client disconnected: {request.sid}")
+
+@socketio.on_error_default
+def default_error_handler(e):
+    logger.error(f"Socket.IO error: {str(e)}")
+    if hasattr(e, 'args') and len(e.args) > 0:
+        error_message = str(e.args[0])
+    else:
+        error_message = str(e)
+    emit('error', {'message': error_message})
+
+@socketio.on_error('/api/analytics')
+def analytics_error_handler(e):
+    logger.error(f"Error in analytics endpoint: {str(e)}")
+    emit('analytics_error', {'message': str(e)})
 
 # Загрузка конфигурации из переменных окружения
 SERVICE_ACCOUNT_INFO = os.getenv("SERVICE_ACCOUNT_INFO")
@@ -1169,16 +1182,16 @@ if __name__ == '__main__':
         signal.signal(signal.SIGTERM, signal_handler)
         
         # Запускаем приложение с обновленными настройками
-        socketio.run(app, 
-                    debug=False, 
-                    host='0.0.0.0', 
-                    port=port, 
-                    use_reloader=False,
-                    log_output=True,
-                    websocket=True,
-                    allow_upgrades=True,  # Разрешаем обновление соединения
-                    ping_interval=25,     # Интервал пинга в секундах
-                    ping_timeout=60)      # Таймаут пинга в секундах
+        socketio.run(
+            app,
+            host='0.0.0.0',
+            port=port,
+            debug=False,
+            use_reloader=False,
+            log_output=True,
+            allow_unsafe_werkzeug=True,  # Для работы с eventlet
+            websocket=True
+        )
     except Exception as e:
         logger.error(f"Ошибка при запуске приложения: {e}")
         raise 
