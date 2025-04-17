@@ -4,3 +4,5 @@ google-auth-httplib2
 google-auth-oauthlib
 APScheduler
 pytz
+Flask==2.0.1
+Flask-SocketIO==5.1.1

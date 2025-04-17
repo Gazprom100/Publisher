@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram Publisher Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --secondary-color: #3498db;
+            --accent-color: #e74c3c;
+        }
+        
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        .navbar {
+            background-color: var(--primary-color);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .card {
+            border: none;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .status-badge {
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+        }
+        
+        .status-waiting {
+            background-color: #f1c40f;
+            color: #fff;
+        }
+        
+        .status-published {
+            background-color: #2ecc71;
+            color: #fff;
+        }
+        
+        .status-error {
+            background-color: #e74c3c;
+            color: #fff;
+        }
+        
+        .post-card {
+            margin-bottom: 20px;
+        }
+        
+        .action-buttons .btn {
+            margin-right: 5px;
+        }
+        
+        .stats-card {
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .stats-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--secondary-color);
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark mb-4">
+        <div class="container">
+            <a class="navbar-brand" href="#">
+                <i class="bi bi-send-fill me-2"></i>
+                Telegram Publisher
+            </a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <h5>Total Posts</h5>
+                    <div class="stats-number" id="total-posts">0</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <h5>Waiting</h5>
+                    <div class="stats-number" id="waiting-posts">0</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <h5>Published</h5>
+                    <div class="stats-number" id="published-posts">0</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card">
+                    <h5>Errors</h5>
+                    <div class="stats-number" id="error-posts">0</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Posts Management</h5>
+                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newPostModal">
+                            <i class="bi bi-plus-lg"></i> New Post
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Time</th>
+                                        <th>Content</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="posts-table">
+                                    <!-- Posts will be loaded here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Post Modal -->
+    <div class="modal fade" id="newPostModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Create New Post</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="newPostForm">
+                        <div class="mb-3">
+                            <label class="form-label">Date</label>
+                            <input type="date" class="form-control" name="date" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Time</label>
+                            <input type="time" class="form-control" name="time" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Photo URL (optional)</label>
+                            <input type="url" class="form-control" name="photo">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Text</label>
+                            <textarea class="form-control" name="text" rows="3" required></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Channel</label>
+                            <select class="form-select" name="channel" required>
+                                <option value="@KConsult_ing">K.Consulting</option>
+                                <option value="@Vegzzzbaj">Vegzzzbaj</option>
+                            </select>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" onclick="createNewPost()">Create</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
+    <script>
+        const socket = io();
+        
+        function updateStats(posts) {
+            const total = posts.length;
+            const waiting = posts.filter(p => p.state === 'ожидает').length;
+            const published = posts.filter(p => p.state === 'выложен').length;
+            const errors = posts.filter(p => p.state === 'ошибка').length;
+            
+            document.getElementById('total-posts').textContent = total;
+            document.getElementById('waiting-posts').textContent = waiting;
+            document.getElementById('published-posts').textContent = published;
+            document.getElementById('error-posts').textContent = errors;
+        }
+        
+        function updatePostsTable(posts) {
+            const tbody = document.getElementById('posts-table');
+            tbody.innerHTML = '';
+            
+            posts.forEach((post, index) => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${post.date}</td>
+                    <td>${post.time}</td>
+                    <td>
+                        ${post.photo ? `<img src="${post.photo}" class="img-thumbnail" style="max-height: 50px;">` : ''}
+                        <div>${post.text}</div>
+                    </td>
+                    <td>
+                        <span class="status-badge status-${post.state === 'ожидает' ? 'waiting' : 
+                            post.state === 'выложен' ? 'published' : 'error'}">
+                            ${post.state}
+                        </span>
+                    </td>
+                    <td class="action-buttons">
+                        <button class="btn btn-sm btn-success" onclick="publishNow(${index})">
+                            <i class="bi bi-send"></i>
+                        </button>
+                        <button class="btn btn-sm btn-warning" onclick="editPost(${index})">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="deletePost(${index})">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+        
+        function loadPosts() {
+            fetch('/api/posts')
+                .then(response => response.json())
+                .then(posts => {
+                    updateStats(posts);
+                    updatePostsTable(posts);
+                })
+                .catch(error => console.error('Error loading posts:', error));
+        }
+        
+        function createNewPost() {
+            const form = document.getElementById('newPostForm');
+            const formData = new FormData(form);
+            const data = Object.fromEntries(formData.entries());
+            
+            fetch('/api/update_status', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    ...data,
+                    editor_confirm: true,
+                    state: 'ожидает'
+                })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    loadPosts();
+                    bootstrap.Modal.getInstance(document.getElementById('newPostModal')).hide();
+                    form.reset();
+                }
+            })
+            .catch(error => console.error('Error creating post:', error));
+        }
+        
+        function publishNow(index) {
+            fetch('/api/publish_now', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    channel_id: document.querySelector('select[name="channel"]').value,
+                    text: document.querySelector('textarea[name="text"]').value,
+                    photo: document.querySelector('input[name="photo"]').value
+                })
+            })
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    loadPosts();
+                }
+            })
+            .catch(error => console.error('Error publishing post:', error));
+        }
+        
+        socket.on('posts_update', function(data) {
+            updateStats(data.posts);
+            updatePostsTable(data.posts);
+        });
+        
+        // Initial load
+        loadPosts();
+    </script>
+</body>
+</html> 

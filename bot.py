@@ -41,7 +41,7 @@ if channel_sheets_str:
     CHANNELS_SHEETS = json.loads(channel_sheets_str)
 else:
     CHANNELS_SHEETS = {
-        "@KConsult_ing": "K.Consulting",
+        "@KConsult_ing": "K",
         "@Vegzzzbaj": "Vegzzzbaj"
     }
 
