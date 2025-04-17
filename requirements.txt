@@ -1,8 +1,11 @@
-python-telegram-bot
-google-api-python-client
-google-auth-httplib2
-google-auth-oauthlib
-APScheduler
-pytz
+python-telegram-bot==20.7
+google-api-python-client==2.108.0
+google-auth-httplib2==0.1.1
+google-auth-oauthlib==1.1.0
+APScheduler==3.10.4
+pytz==2024.1
 Flask==2.0.1
 Flask-SocketIO==5.1.1
+python-engineio==4.8.1
+python-socketio==5.11.1
+eventlet==0.35.2
