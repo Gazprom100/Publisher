@@ -1,3 +1,6 @@
+import eventlet
+eventlet.monkey_patch()
+
 from flask import Flask, render_template, jsonify, request, send_from_directory
 from flask_socketio import SocketIO, emit
 import json
@@ -10,7 +13,6 @@ import threading
 import asyncio
 from telegram import Bot
 from apscheduler.schedulers.background import BackgroundScheduler
-from gevent import monkey
 from collections import defaultdict
 import pandas as pd
 from typing import Dict, List, Any
@@ -24,13 +26,13 @@ import redis
 import plotly.graph_objects as go
 import plotly.utils
 from urllib.parse import urlparse
-import eventlet
 import sys
 import signal
+import re
 
-# Настройка логирования с более подробной информацией
+# Настройка логирования
 logging.basicConfig(
-    level=logging.DEBUG,  # Изменено на DEBUG для более подробного логирования
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s - %(pathname)s:%(lineno)d',
     handlers=[
         logging.FileHandler('dashboard.log'),
@@ -73,17 +75,12 @@ socketio = SocketIO(
     cors_allowed_origins='*',
     logger=True,
     engineio_logger=True,
-    ping_timeout=60000,  # Увеличено до 60 секунд
-    ping_interval=25000,  # Увеличено до 25 секунд
+    ping_timeout=60000,
+    ping_interval=25000,
     max_http_buffer_size=1000000,
     manage_session=True,
     always_connect=True,
-    transports=['websocket', 'polling'],
-    async_handlers=True,
-    reconnection_attempts=5,
-    reconnection_delay=1000,
-    reconnection_delay_max=5000,
-    path='/socket.io'
+    transports=['websocket', 'polling']
 )
 
 # Обновленные обработчики событий Socket.IO
@@ -142,7 +139,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8006930667:AAHHpNFS3ySj8hzteC-mmg0
 
 # Конфигурация каналов
 CHANNELS_SHEETS = {
-    "@KConsult_ing": "K.Consulting",
+    "@KConsult_ing": "K",
     "@Vegzzzbaj": "Vegzzzbaj"
 }
 
@@ -1191,31 +1188,33 @@ def generate_post_text():
         logger.error(f"Ошибка при генерации текста: {e}")
         return jsonify({'error': str(e)}), 500
 
+# Функция для фильтрации нецензурной лексики
+def filter_profanity(text: str) -> str:
+    # Список слов для замены
+    profanity_words = ['заебись', 'ебать', 'хрена']
+    
+    # Заменяем слова на звездочки
+    filtered_text = text.lower()
+    for word in profanity_words:
+        filtered_text = re.sub(word, '*' * len(word), filtered_text, flags=re.IGNORECASE)
+    
+    return filtered_text
+
+# Функция для обработки записей из Google Sheets
+def process_sheet_record(record: Dict[str, Any]) -> Dict[str, Any]:
+    if 'text' in record:
+        record['text'] = filter_profanity(record['text'])
+    return record
+
 if __name__ == '__main__':
     try:
         # Получаем порт из переменной окружения (важно для Render.com)
         port = int(os.environ.get('PORT', 10000))
         
-        # Проверяем, не занят ли порт
-        import socket
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        result = sock.connect_ex(('0.0.0.0', port))
-        if result == 0:
-            logger.error(f"Порт {port} уже используется")
-            # Пробуем использовать следующий доступный порт
-            port += 1
-            while result == 0 and port < 65535:
-                result = sock.connect_ex(('0.0.0.0', port))
-                if result == 0:
-                    port += 1
-        sock.close()
-
         # Настройка для работы за прокси
         app.config['PREFERRED_URL_SCHEME'] = 'https'
         
         logger.info(f"Запуск приложения на порту {port}")
-        logger.info(f"Путь к шаблонам: {TEMPLATE_DIR}")
-        logger.info(f"Путь к статическим файлам: {STATIC_DIR}")
         
         # Устанавливаем обработчик сигналов для корректного завершения
         def signal_handler(sig, frame):
