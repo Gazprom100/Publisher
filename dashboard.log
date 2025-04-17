@@ -7,3 +7,11 @@
 2025-04-17 12:36:11,974 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
 2025-04-17 12:36:11,976 - apscheduler.scheduler - INFO - Added job "publish_posts_all_channels" to job store "default"
 2025-04-17 12:36:11,977 - apscheduler.scheduler - INFO - Scheduler started
+2025-04-17 13:41:08,719 - engineio.server - INFO - Server initialized for gevent.
+2025-04-17 13:41:08,832 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2025-04-17 13:41:08,833 - apscheduler.scheduler - INFO - Added job "publish_posts_all_channels" to job store "default"
+2025-04-17 13:41:08,833 - apscheduler.scheduler - INFO - Scheduler started
+2025-04-17 13:41:26,495 - engineio.server - INFO - Server initialized for gevent.
+2025-04-17 13:41:26,583 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2025-04-17 13:41:26,584 - apscheduler.scheduler - INFO - Added job "publish_posts_all_channels" to job store "default"
+2025-04-17 13:41:26,584 - apscheduler.scheduler - INFO - Scheduler started

@@ -1,1 +1,1 @@
-web: gunicorn --worker-class gevent --worker-connections 1000 wsgi:app 
+web: gunicorn --worker-class geventwebsocket.gunicorn.workers.GeventWebSocketWorker --worker-connections 1000 wsgi:app 

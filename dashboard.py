@@ -53,7 +53,12 @@ os.makedirs(STATIC_DIR, exist_ok=True)
 app = Flask(__name__, 
             template_folder=TEMPLATE_DIR,
             static_folder=STATIC_DIR)
-socketio = SocketIO(app, async_mode='gevent', cors_allowed_origins='*')
+socketio = SocketIO(app, 
+                   async_mode='gevent',
+                   cors_allowed_origins='*',
+                   engineio_logger=True,
+                   logger=True,
+                   ping_timeout=60)
 
 # Загрузка конфигурации из переменных окружения
 SERVICE_ACCOUNT_INFO = os.getenv("SERVICE_ACCOUNT_INFO")
@@ -626,7 +631,7 @@ def get_post_suggestions_api():
 
 if __name__ == '__main__':
     # Запуск Flask приложения
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 10000))
     print(f"Запуск приложения на порту {port}")
     print(f"Путь к шаблонам: {TEMPLATE_DIR}")
     print(f"Путь к статическим файлам: {STATIC_DIR}")
