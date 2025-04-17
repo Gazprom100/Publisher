@@ -24,7 +24,8 @@ import redis
 import plotly.graph_objects as go
 import plotly.utils
 from urllib.parse import urlparse
-monkey.patch_all()
+import eventlet
+eventlet.monkey_patch()
 
 # Настройка логирования
 logging.basicConfig(
@@ -53,12 +54,16 @@ os.makedirs(STATIC_DIR, exist_ok=True)
 app = Flask(__name__, 
             template_folder=TEMPLATE_DIR,
             static_folder=STATIC_DIR)
+app.config['SECRET_KEY'] = os.urandom(24)
 socketio = SocketIO(app, 
-                   async_mode='gevent',
+                   async_mode='eventlet',
                    cors_allowed_origins='*',
                    engineio_logger=True,
                    logger=True,
-                   ping_timeout=60)
+                   ping_timeout=60,
+                   ping_interval=25,
+                   max_http_buffer_size=1000000,
+                   manage_session=False)
 
 # Загрузка конфигурации из переменных окружения
 SERVICE_ACCOUNT_INFO = os.getenv("SERVICE_ACCOUNT_INFO")
@@ -343,54 +348,101 @@ def get_analytics_data() -> Dict[str, Any]:
 
 @app.route('/api/analytics')
 def get_analytics():
-    """API endpoint для получения аналитических данных"""
     try:
-        return jsonify(get_analytics_data())
+        all_posts = []
+        for sheet_name in CHANNELS_SHEETS.values():
+            posts = get_posts_from_sheet(sheet_name)
+            all_posts.extend(posts)
+            
+        # Базовая статистика
+        now = datetime.now()
+        stats = {
+            'total_posts': len(all_posts),
+            'posts_today': len([p for p in all_posts if 
+                (now - p['time']).days == 0]),
+            'posts_week': len([p for p in all_posts if 
+                (now - p['time']).days <= 7]),
+            'posts_month': len([p for p in all_posts if 
+                (now - p['time']).days <= 30]),
+            'posts_with_photo': len([p for p in all_posts if p['photo']]),
+            'posts_by_channel': {},
+            'activity_by_hour': [0] * 24,
+            'posts': all_posts  # Добавляем сами посты для фронтенда
+        }
+        
+        # Статистика по каналам
+        for channel_id in CHANNELS_SHEETS.keys():
+            channel_posts = [p for p in all_posts if p.get('channel') == channel_id]
+            stats['posts_by_channel'][channel_id] = len(channel_posts)
+            
+        # Активность по часам
+        for post in all_posts:
+            hour = post['time'].hour
+            stats['activity_by_hour'][hour] += 1
+            
+        return jsonify(stats)
     except Exception as e:
+        logger.error(f"Ошибка при получении аналитики: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/channel-health')
 def get_channel_health():
-    """Проверка здоровья каналов"""
-    health_data = {}
-    for channel_id in CHANNELS_SHEETS.keys():
-        try:
-            chat = run_async(bot.get_chat(channel_id))
-            health_data[channel_id] = {
-                'status': 'active',
-                'title': chat.title,
-                'members_count': chat.get_member_count() if hasattr(chat, 'get_member_count') else 'N/A',
-                'last_checked': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            }
-        except Exception as e:
-            health_data[channel_id] = {
-                'status': 'error',
-                'error': str(e),
-                'last_checked': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            }
-    return jsonify(health_data)
+    try:
+        channel_health = {}
+        for channel_id, sheet_name in CHANNELS_SHEETS.items():
+            try:
+                # Получаем информацию о канале через Telegram API
+                chat_info = run_async(bot.get_chat(channel_id))
+                
+                # Получаем посты канала
+                posts = get_posts_from_sheet(sheet_name)
+                
+                # Рассчитываем статистику
+                total_posts = len(posts)
+                posts_last_week = len([p for p in posts if 
+                    (datetime.now() - p['time']).days <= 7])
+                
+                # Собираем информацию о канале
+                channel_health[channel_id] = {
+                    'title': chat_info.title,
+                    'member_count': chat_info.member_count if hasattr(chat_info, 'member_count') else 0,
+                    'total_posts': total_posts,
+                    'posts_per_week': posts_last_week,
+                    'posts_with_photo': len([p for p in posts if p['photo']]),
+                    'status': 'active' if posts_last_week > 0 else 'inactive',
+                    'last_post_time': max([p['time'] for p in posts]) if posts else None
+                }
+            except TelegramError as e:
+                logger.error(f"Ошибка при получении данных канала {channel_id}: {e}")
+                channel_health[channel_id] = {
+                    'error': str(e),
+                    'status': 'error'
+                }
+                
+        return jsonify(channel_health)
+    except Exception as e:
+        logger.error(f"Ошибка при получении данных о каналах: {e}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/schedule-preview')
 def get_schedule_preview():
-    """Получение предварительного просмотра расписания публикаций"""
     try:
+        all_posts = []
         now = datetime.now()
-        end_date = now + timedelta(days=7)
-        scheduled_posts = []
         
         for channel_id, sheet_name in CHANNELS_SHEETS.items():
             posts = get_posts_from_sheet(sheet_name)
             for post in posts:
-                if post['state'] == 'ожидает' and now <= post['time'] <= end_date:
-                    scheduled_posts.append({
-                        'channel': channel_id,
-                        'time': post['time'].strftime('%Y-%m-%d %H:%M'),
-                        'text': post['text'][:100] + '...' if len(post['text']) > 100 else post['text'],
-                        'has_photo': bool(post.get('photo'))
-                    })
+                if post['time'] > now and post['state'].lower() == 'ожидает':
+                    post['channel'] = channel_id
+                    all_posts.append(post)
         
-        return jsonify(sorted(scheduled_posts, key=lambda x: x['time']))
+        # Сортируем по времени и берем ближайшие 5 постов
+        upcoming_posts = sorted(all_posts, key=lambda x: x['time'])[:5]
+        
+        return jsonify(upcoming_posts)
     except Exception as e:
+        logger.error(f"Ошибка при получении предварительного расписания: {e}")
         return jsonify({'error': str(e)}), 500
 
 def cache_key(prefix: str, *args) -> str:
@@ -435,14 +487,35 @@ def validate_image_url(url: str) -> bool:
 
 @app.route('/api/validate-image', methods=['POST'])
 def validate_image():
-    """API endpoint для валидации URL изображения"""
-    data = request.json
-    url = data.get('url')
-    if not url:
-        return jsonify({'error': 'URL не указан'}), 400
-    
-    is_valid = validate_image_url(url)
-    return jsonify({'valid': is_valid})
+    try:
+        data = request.json
+        url = data.get('url')
+        
+        if not url:
+            return jsonify({'valid': False, 'error': 'URL не указан'}), 400
+            
+        try:
+            response = requests.get(url)
+            img = Image.open(BytesIO(response.content))
+            
+            # Проверяем размер файла (не более 5MB)
+            file_size = len(response.content)
+            if file_size > 5 * 1024 * 1024:  # 5MB в байтах
+                return jsonify({'valid': False, 'error': 'Размер файла превышает 5MB'})
+                
+            # Проверяем формат
+            valid_formats = {'JPEG', 'PNG', 'GIF'}
+            if img.format not in valid_formats:
+                return jsonify({'valid': False, 'error': 'Неподдерживаемый формат изображения'})
+                
+            return jsonify({'valid': True, 'format': img.format, 'size': file_size})
+            
+        except Exception as e:
+            return jsonify({'valid': False, 'error': str(e)})
+            
+    except Exception as e:
+        logger.error(f"Ошибка при валидации изображения: {e}")
+        return jsonify({'error': str(e)}), 500
 
 def get_post_statistics(days: int = 30) -> Dict[str, Any]:
     """Получает статистику постов за указанный период"""
@@ -595,14 +668,52 @@ def analyze_post_performance(post: Dict) -> Dict[str, Any]:
     }
 
 @app.route('/api/analyze-post', methods=['POST'])
-def analyze_post_api():
-    """API endpoint для анализа поста"""
-    data = request.json
-    if not data:
-        return jsonify({'error': 'Данные не предоставлены'}), 400
-    
-    analysis = analyze_post_performance(data)
-    return jsonify(analysis)
+def analyze_post():
+    try:
+        data = request.json
+        text = data.get('text', '')
+        photo = data.get('photo')
+        post_time = data.get('time')
+        
+        analysis = {
+            'score': 0,
+            'feedback': [],
+            'optimization_tips': []
+        }
+        
+        # Анализ длины текста
+        text_length = len(text)
+        if text_length < 50:
+            analysis['feedback'].append('Текст слишком короткий')
+            analysis['optimization_tips'].append('Добавьте больше информации, минимум 50 символов')
+        elif text_length > 1500:
+            analysis['feedback'].append('Текст слишком длинный')
+            analysis['optimization_tips'].append('Сократите текст до 1500 символов для лучшего восприятия')
+        else:
+            analysis['score'] += 1
+            analysis['feedback'].append('Оптимальная длина текста')
+            
+        # Анализ наличия фото
+        if photo:
+            analysis['score'] += 1
+            analysis['feedback'].append('Наличие изображения повышает вовлеченность')
+        else:
+            analysis['optimization_tips'].append('Добавьте изображение для повышения вовлеченности')
+            
+        # Анализ времени публикации
+        if post_time:
+            post_hour = datetime.fromisoformat(post_time).hour
+            if 9 <= post_hour <= 21:
+                analysis['score'] += 1
+                analysis['feedback'].append('Оптимальное время публикации')
+            else:
+                analysis['optimization_tips'].append('Рекомендуется публиковать посты с 9:00 до 21:00')
+                
+        return jsonify(analysis)
+        
+    except Exception as e:
+        logger.error(f"Ошибка при анализе поста: {e}")
+        return jsonify({'error': str(e)}), 500
 
 def get_post_suggestions() -> List[Dict[str, str]]:
     """Генерирует предложения по улучшению контента"""
@@ -635,4 +746,10 @@ if __name__ == '__main__':
     print(f"Запуск приложения на порту {port}")
     print(f"Путь к шаблонам: {TEMPLATE_DIR}")
     print(f"Путь к статическим файлам: {STATIC_DIR}")
-    socketio.run(app, debug=False, host='0.0.0.0', port=port, use_reloader=False) 
+    socketio.run(app, 
+                debug=False, 
+                host='0.0.0.0', 
+                port=port, 
+                use_reloader=False,
+                log_output=True,
+                websocket=True) 
