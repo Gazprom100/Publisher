@@ -14,21 +14,21 @@ from apscheduler.schedulers.background import BackgroundScheduler
 app = Flask(__name__)
 socketio = SocketIO(app)
 
-# Load configuration from environment variables
+# Загрузка конфигурации из переменных окружения
 SERVICE_ACCOUNT_FILE = os.getenv("SERVICE_ACCOUNT_FILE", "service_account.json")
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID", "1FUoF6V9whpPMfEml__rpqmGKPs5ohhLUI1s7D1N0SG8")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8006930667:AAHHpNFS3ySj8hzteC-mmg0YBtHnSf8jREs")
 
-# Initialize Google Sheets service
+# Инициализация сервиса Google Sheets
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 credentials = service_account.Credentials.from_service_account_file(
     SERVICE_ACCOUNT_FILE, scopes=SCOPES)
 service = build('sheets', 'v4', credentials=credentials)
 
-# Initialize Telegram bot
+# Инициализация Telegram бота
 bot = Bot(token=TELEGRAM_TOKEN)
 
-# Global event loop for async operations
+# Глобальный event loop для асинхронных операций
 global_loop = asyncio.new_event_loop()
 asyncio.set_event_loop(global_loop)
 
@@ -38,6 +38,10 @@ def run_async(coro):
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/health')
+def health_check():
+    return 'OK', 200
 
 @app.route('/api/posts')
 def get_posts():
@@ -115,7 +119,7 @@ def publish_now():
 
 def background_tasks():
     while True:
-        socketio.sleep(60)  # Update every minute
+        socketio.sleep(60)  # Обновление каждую минуту
         try:
             result = service.spreadsheets().values().get(
                 spreadsheetId=SPREADSHEET_ID,
@@ -124,27 +128,34 @@ def background_tasks():
             values = result.get('values', [])
             socketio.emit('posts_update', {'posts': values})
         except Exception as e:
-            print(f"Error in background task: {e}")
+            print(f"Ошибка в фоновой задаче: {e}")
 
-# Запуск HTTP-сервера для Render.com
-def start_http_server():
-    port = int(os.environ.get("PORT", 8000))
-    from http.server import HTTPServer, BaseHTTPRequestHandler
-    
-    class SimpleHandler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b'OK')
-    
-    httpd = HTTPServer(('', port), SimpleHandler)
-    print(f"HTTP-сервер запущен на порту {port}")
-    httpd.serve_forever()
+def publish_posts_all_channels():
+    now = datetime.now()
+    print(f"Текущее время: {now}")
+    for channel_id, sheet_name in CHANNELS_SHEETS.items():
+        print(f"Обработка листа '{sheet_name}' для канала '{channel_id}'...")
+        posts = get_posts_from_sheet(sheet_name)
+        for idx, post in enumerate(posts):
+            if post['editor_confirm'] and post['time'] <= now and post['state'] == 'ожидает':
+                try:
+                    if post['photo']:
+                        run_async(bot.send_photo(
+                            chat_id=channel_id,
+                            photo=post['photo'],
+                            caption=post['text']
+                        ))
+                    else:
+                        run_async(bot.send_message(
+                            chat_id=channel_id,
+                            text=post['text']
+                        ))
+                    print(f"[{datetime.now()}] Опубликовано в {channel_id}: {post['text']}")
+                    update_post_status(sheet_name, idx, new_status="выложен")
+                except Exception as e:
+                    print(f"Ошибка при публикации для канала {channel_id}: {e}")
 
 if __name__ == '__main__':
-    # Запуск HTTP-сервера в отдельном потоке
-    threading.Thread(target=start_http_server, daemon=True).start()
-    
     # Запуск фоновых задач
     socketio.start_background_task(background_tasks)
     
@@ -154,4 +165,5 @@ if __name__ == '__main__':
     scheduler.start()
     
     # Запуск Flask приложения
-    socketio.run(app, debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000))) 
+    port = int(os.environ.get('PORT', 5000))
+    socketio.run(app, debug=False, host='0.0.0.0', port=port) 
