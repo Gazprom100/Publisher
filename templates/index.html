@@ -13,8 +13,42 @@
             });
         }
 
-        // Инициализация Socket.IO
-        const socket = io();
+        // Инициализация Socket.IO с обработкой ошибок
+        const socket = io({
+            reconnection: true,
+            reconnectionAttempts: 5,
+            reconnectionDelay: 1000,
+            timeout: 60000,
+            autoConnect: true,
+            transports: ['websocket', 'polling']
+        });
+
+        // Обработчики событий Socket.IO
+        socket.on('connect', () => {
+            console.log('Connected to server');
+            document.getElementById('connection-status').classList.remove('text-danger');
+            document.getElementById('connection-status').classList.add('text-success');
+            document.getElementById('connection-status').textContent = 'Connected';
+        });
+
+        socket.on('disconnect', () => {
+            console.log('Disconnected from server');
+            document.getElementById('connection-status').classList.remove('text-success');
+            document.getElementById('connection-status').classList.add('text-danger');
+            document.getElementById('connection-status').textContent = 'Disconnected';
+        });
+
+        socket.on('connect_error', (error) => {
+            console.error('Connection error:', error);
+            document.getElementById('connection-status').classList.remove('text-success');
+            document.getElementById('connection-status').classList.add('text-danger');
+            document.getElementById('connection-status').textContent = 'Connection Error';
+        });
+
+        socket.on('posts_update', (data) => {
+            console.log('Received posts update:', data);
+            updateDashboard(data.posts);
+        });
 
         // Обновление данных каждые 5 минут
         setInterval(() => {
@@ -102,5 +136,97 @@
                 }
             })
             .catch(error => console.error('Ошибка при обновлении аналитики:', error));
+    }
+
+    // Функция обновления дашборда
+    function updateDashboard(posts) {
+        if (!posts) return;
+        
+        try {
+            // Обновляем статистику
+            const stats = calculateStats(posts);
+            updateStats(stats);
+            
+            // Обновляем графики
+            updateCharts(stats);
+            
+            // Обновляем список постов
+            updatePostsList(posts);
+        } catch (error) {
+            console.error('Error updating dashboard:', error);
+        }
+    }
+
+    // Вспомогательные функции
+    function calculateStats(posts) {
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        
+        return {
+            total: posts.length,
+            today: posts.filter(post => new Date(post.time) >= today).length,
+            withPhoto: posts.filter(post => post.photo).length,
+            withoutPhoto: posts.filter(post => !post.photo).length,
+            scheduled: posts.filter(post => post.state === 'ожидает').length
+        };
+    }
+
+    function updateStats(stats) {
+        const elements = {
+            'total-posts': stats.total,
+            'posts-today': stats.today,
+            'posts-scheduled': stats.scheduled
+        };
+
+        Object.entries(elements).forEach(([id, value]) => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.textContent = value;
+            }
+        });
+    }
+
+    function updateCharts(stats) {
+        // Обновление графика типов контента
+        const contentTypeData = {
+            values: [stats.withPhoto, stats.withoutPhoto],
+            labels: ['С фото', 'Без фото'],
+            type: 'pie'
+        };
+
+        const contentTypeLayout = {
+            title: 'Типы контента',
+            height: 300,
+            margin: { t: 30, b: 30, l: 30, r: 30 }
+        };
+
+        const contentTypeChart = document.getElementById('content-type-chart');
+        if (contentTypeChart) {
+            Plotly.newPlot('content-type-chart', [contentTypeData], contentTypeLayout);
+        }
+    }
+
+    function updatePostsList(posts) {
+        const container = document.getElementById('posts-list');
+        if (!container) return;
+
+        // Сортируем посты по времени
+        const sortedPosts = [...posts].sort((a, b) => 
+            new Date(b.time) - new Date(a.time)
+        );
+
+        // Обновляем список
+        container.innerHTML = sortedPosts.slice(0, 10).map(post => `
+            <div class="post-item mb-3">
+                <div class="d-flex justify-content-between">
+                    <small>${new Date(post.time).toLocaleString()}</small>
+                    <span class="badge ${post.state === 'выложен' ? 'bg-success' : 'bg-warning'}">
+                        ${post.state}
+                    </span>
+                </div>
+                <p class="mb-1">${post.text.substring(0, 100)}${post.text.length > 100 ? '...' : ''}</p>
+                ${post.photo ? `<img src="${post.photo}" class="img-thumbnail" style="max-width: 100px;">` : ''}
+            </div>
+        `).join('');
     }
     </script> 

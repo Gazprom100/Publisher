@@ -65,6 +65,8 @@ app = Flask(__name__,
             template_folder=TEMPLATE_DIR,
             static_folder=STATIC_DIR)
 app.config['SECRET_KEY'] = os.urandom(24)
+
+# Обновленные настройки Socket.IO
 socketio = SocketIO(app, 
                    async_mode='eventlet',
                    cors_allowed_origins='*',
@@ -73,7 +75,23 @@ socketio = SocketIO(app,
                    ping_timeout=60,
                    ping_interval=25,
                    max_http_buffer_size=1000000,
-                   manage_session=False)
+                   manage_session=True,  # Включаем управление сессиями
+                   reconnection=True,    # Включаем автоматическое переподключение
+                   reconnection_attempts=5,  # Количество попыток переподключения
+                   reconnection_delay=1000,  # Задержка между попытками в миллисекундах
+                   cookie=None)  # Отключаем использование cookie для сессий
+
+@socketio.on_error_default
+def default_error_handler(e):
+    logger.error(f"Socket.IO error: {str(e)}")
+
+@socketio.on('connect')
+def handle_connect():
+    logger.info(f"Client connected: {request.sid}")
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    logger.info(f"Client disconnected: {request.sid}")
 
 # Загрузка конфигурации из переменных окружения
 SERVICE_ACCOUNT_INFO = os.getenv("SERVICE_ACCOUNT_INFO")
@@ -275,13 +293,22 @@ def background_tasks():
         try:
             all_posts = []
             for sheet_name in CHANNELS_SHEETS.values():
-                posts = get_posts_from_sheet(sheet_name)
-                all_posts.extend(posts)
-            socketio.emit('posts_update', {'posts': all_posts})
+                try:
+                    posts = get_posts_from_sheet(sheet_name)
+                    all_posts.extend(posts)
+                except Exception as e:
+                    logger.error(f"Ошибка при получении постов из листа {sheet_name}: {e}")
+                    continue
+            
+            # Проверяем наличие активных клиентов перед отправкой
+            if len(socketio.server.eio.sockets) > 0:
+                socketio.emit('posts_update', {'posts': all_posts})
+                logger.debug("Данные успешно отправлены через WebSocket")
+            
         except Exception as e:
-            logger.error(f"Ошибка в фоновой задаче: {e}")
+            logger.error(f"Ошибка в фоновой задаче WebSocket: {e}")
         finally:
-            eventlet.sleep(60)
+            eventlet.sleep(60)  # Пауза между обновлениями
 
 def publish_posts_all_channels():
     """Публикация запланированных постов"""
@@ -1141,14 +1168,17 @@ if __name__ == '__main__':
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
         
-        # Запускаем приложение
+        # Запускаем приложение с обновленными настройками
         socketio.run(app, 
                     debug=False, 
                     host='0.0.0.0', 
                     port=port, 
                     use_reloader=False,
                     log_output=True,
-                    websocket=True)
+                    websocket=True,
+                    allow_upgrades=True,  # Разрешаем обновление соединения
+                    ping_interval=25,     # Интервал пинга в секундах
+                    ping_timeout=60)      # Таймаут пинга в секундах
     except Exception as e:
         logger.error(f"Ошибка при запуске приложения: {e}")
         raise 
