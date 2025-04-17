@@ -1,40 +1,57 @@
 import multiprocessing
 import os
 
-# Настройки воркеров
+# Worker settings
 workers = multiprocessing.cpu_count() * 2 + 1
 threads = 2
 worker_class = 'eventlet'
 worker_connections = 1000
 
-# Таймауты
+# Timeouts
 timeout = 120
 keepalive = 5
 graceful_timeout = 120
 
-# Настройки логирования
+# Logging settings
 accesslog = '-'
 errorlog = '-'
 loglevel = 'info'
 
-# Настройки привязки
+# Binding settings
 bind = f"0.0.0.0:{os.environ.get('PORT', '10000')}"
 
-# Настройки безопасности
+# Security settings
 limit_request_line = 0
 limit_request_fields = 0
 
-# Настройки для работы за прокси
+# Proxy settings
 forwarded_allow_ips = '*'
 proxy_allow_ips = '*'
+
+# SSL settings (uncomment if needed)
+# keyfile = 'ssl/key.pem'
+# certfile = 'ssl/cert.pem'
+
+# Additional settings
+preload_app = True
+reload = False
+
+# WebSocket optimizations
+worker_tmp_dir = '/dev/shm'
+max_requests = 1000
+max_requests_jitter = 50
+
+# Настройки для работы за прокси
+# forwarded_allow_ips = '*'
+# proxy_allow_ips = '*'
 
 # SSL настройки (закомментированы, раскомментировать при необходимости)
 # keyfile = 'ssl/key.pem'
 # certfile = 'ssl/cert.pem'
 
 # Дополнительные настройки
-preload_app = True
-reload = False  # Отключаем автоперезагрузку в продакшене
+# preload_app = True
+# reload = False  # Отключаем автоперезагрузку в продакшене
 
 # Настройки для работы с WebSocket
 # worker_class = "eventlet"

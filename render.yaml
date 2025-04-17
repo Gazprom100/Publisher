@@ -14,15 +14,29 @@ services:
           type: redis
           name: publisher-cache
           property: connectionString
+      - key: GUNICORN_CMD_ARGS
+        value: "--config gunicorn.conf.py"
+      - key: PYTHONUNBUFFERED
+        value: "1"
     healthCheckPath: /health
     autoDeploy: true
     numInstances: 1
     regions:
       - frankfurt
     plan: starter
+    disk:
+      name: publisher-data
+      mountPath: /data
+      sizeGB: 1
+    metrics:
+      - port: 8000
+        path: /metrics
 
   - type: redis
     name: publisher-cache
     ipAllowList: []
     plan: starter
-    maxmemoryPolicy: noeviction 
+    maxmemoryPolicy: noeviction
+    disk:
+      name: redis-data
+      sizeGB: 1 
