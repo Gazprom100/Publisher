@@ -176,62 +176,75 @@ def run_async(coro):
 def get_range_name(sheet_name):
     return f"'{sheet_name}'!A2:F"
 
-def get_posts_from_sheet(sheet_name):
+def get_posts_from_sheet(sheet_name: str) -> List[Dict[str, Any]]:
+    """Получает посты из листа Google Sheets"""
+    if not service:
+        logger.error("Google Sheets API не инициализирован")
+        return []
+
     range_name = get_range_name(sheet_name)
     try:
         result = service.spreadsheets().values().get(
             spreadsheetId=SPREADSHEET_ID,
             range=range_name
         ).execute()
-    except Exception as ex:
-        print(f"Ошибка при получении данных из листа {sheet_name}: {ex}")
+        
+        values = result.get('values', [])
+        posts = []
+        for row in values:
+            if len(row) < 6:
+                logger.warning(f"Неверный формат строки в листе {sheet_name}: {row}")
+                continue
+                
+            try:
+                date_str = row[0].strip()
+                time_str = row[1].strip()
+                datetime_str = f"{date_str} {time_str}"
+                post_time = datetime.strptime(datetime_str, '%d.%m.%Y %H:%M')
+                
+                post = {
+                    'time': post_time,
+                    'photo': row[2].strip(),
+                    'text': row[3].strip(),
+                    'editor_confirm': row[4].strip().lower() in ["true", "1", "да"],
+                    'state': row[5].strip().lower(),
+                }
+                post = process_sheet_record(post)
+                logger.debug(f"Получена запись из листа {sheet_name}: {post}")
+                posts.append(post)
+            except (ValueError, IndexError) as e:
+                logger.error(f"Ошибка при обработке строки в листе {sheet_name}: {e}")
+                continue
+                
+        return posts
+    except Exception as e:
+        logger.error(f"Ошибка при получении данных из листа {sheet_name}: {e}")
         return []
-    
-    values = result.get('values', [])
-    posts = []
-    for row in values:
-        if len(row) < 6:
-            continue
-        date_str = row[0].strip()
-        time_str = row[1].strip()
-        datetime_str = f"{date_str} {time_str}"
-        try:
-            post_time = datetime.strptime(datetime_str, '%d.%m.%Y %H:%M')
-        except ValueError:
-            print(f"Неверный формат даты/времени в листе {sheet_name}: {datetime_str}")
-            continue
 
-        photo = row[2].strip()
-        text = row[3].strip()
-        editor_confirm = row[4].strip().lower() in ["true", "1", "да"]
-        state = row[5].strip().lower()
-        post = {
-            'time': post_time,
-            'photo': photo,
-            'text': text,
-            'editor_confirm': editor_confirm,
-            'state': state,
-        }
-        print(f"Получена запись из листа {sheet_name}: {post}")
-        posts.append(post)
-    return posts
+def update_post_status(sheet_name: str, row_index: int, new_status: str = "выложен") -> bool:
+    """Обновляет статус поста в Google Sheets"""
+    if not service:
+        logger.error("Google Sheets API не инициализирован")
+        return False
 
-def update_post_status(sheet_name, row_index, new_status="выложен"):
-    row_number = row_index + 2
-    range_to_update = f"'{sheet_name}'!F{row_number}"
-    value_input_option = "RAW"
-    values = [[new_status]]
-    body = {'values': values}
     try:
+        row_number = row_index + 2
+        range_to_update = f"'{sheet_name}'!F{row_number}"
+        body = {'values': [[new_status]]}
+        
         result = service.spreadsheets().values().update(
             spreadsheetId=SPREADSHEET_ID,
             range=range_to_update,
-            valueInputOption=value_input_option,
+            valueInputOption="RAW",
             body=body
         ).execute()
-        print(f"Лист [{sheet_name}], строка {row_number} обновлена: {result.get('updatedCells')} ячеек изменено.")
+        
+        cells_updated = result.get('updatedCells', 0)
+        logger.info(f"Лист [{sheet_name}], строка {row_number} обновлена: {cells_updated} ячеек изменено")
+        return cells_updated > 0
     except Exception as e:
-        print(f"Ошибка при обновлении статуса в листе {sheet_name}: {e}")
+        logger.error(f"Ошибка при обновлении статуса в листе {sheet_name}: {e}")
+        return False
 
 @app.route('/')
 def index():
@@ -1190,19 +1203,18 @@ def generate_post_text():
 
 # Функция для фильтрации нецензурной лексики
 def filter_profanity(text: str) -> str:
-    # Список слов для замены
+    """Фильтрует нецензурную лексику из текста"""
     profanity_words = ['заебись', 'ебать', 'хрена']
-    
-    # Заменяем слова на звездочки
     filtered_text = text.lower()
     for word in profanity_words:
         filtered_text = re.sub(word, '*' * len(word), filtered_text, flags=re.IGNORECASE)
-    
     return filtered_text
 
-# Функция для обработки записей из Google Sheets
 def process_sheet_record(record: Dict[str, Any]) -> Dict[str, Any]:
-    if 'text' in record:
+    """Обрабатывает запись из Google Sheets"""
+    if not isinstance(record, dict):
+        return record
+    if 'text' in record and isinstance(record['text'], str):
         record['text'] = filter_profanity(record['text'])
     return record
 

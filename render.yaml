@@ -3,20 +3,26 @@ services:
     name: publisher
     env: python
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn --config gunicorn.conf.py --worker-class eventlet dashboard:app
+    startCommand: gunicorn dashboard:app
     envVars:
       - key: PYTHON_VERSION
         value: 3.9.0
-      - key: PORT
-        value: 10000
-      - key: FLASK_DEBUG
-        value: 0
-      - key: PYTHONUNBUFFERED
-        value: 1
-      - key: WEB_CONCURRENCY
-        value: 4
+      - key: GOOGLE_CREDENTIALS
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: publisher-cache
+          property: connectionString
     healthCheckPath: /health
     autoDeploy: true
     numInstances: 1
-    domains:
-      - publisher.onrender.com 
+    regions:
+      - frankfurt
+    plan: starter
+
+  - type: redis
+    name: publisher-cache
+    ipAllowList: []
+    plan: starter
+    maxmemoryPolicy: noeviction 
