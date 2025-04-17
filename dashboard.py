@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, send_from_directory
 from flask_socketio import SocketIO
 import json
 import os
@@ -13,7 +13,14 @@ from apscheduler.schedulers.background import BackgroundScheduler
 import eventlet
 eventlet.monkey_patch()
 
-app = Flask(__name__)
+# Определяем базовый путь для шаблонов и статических файлов
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TEMPLATE_DIR = os.path.join(BASE_DIR, 'templates')
+STATIC_DIR = os.path.join(BASE_DIR, 'static')
+
+app = Flask(__name__, 
+            template_folder=TEMPLATE_DIR,
+            static_folder=STATIC_DIR)
 socketio = SocketIO(app, async_mode='eventlet')
 
 # Загрузка конфигурации из переменных окружения
@@ -105,7 +112,11 @@ def update_post_status(sheet_name, row_index, new_status="выложен"):
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    try:
+        return render_template('index.html')
+    except Exception as e:
+        print(f"Ошибка при рендеринге шаблона: {e}")
+        return str(e), 500
 
 @app.route('/health')
 def health_check():
@@ -210,6 +221,10 @@ def publish_posts_all_channels():
                     print(f"Ошибка при публикации для канала {channel_id}: {e}")
 
 if __name__ == '__main__':
+    # Создаем директории, если они не существуют
+    os.makedirs(TEMPLATE_DIR, exist_ok=True)
+    os.makedirs(STATIC_DIR, exist_ok=True)
+    
     # Запуск фоновых задач
     socketio.start_background_task(background_tasks)
     
@@ -220,4 +235,7 @@ if __name__ == '__main__':
     
     # Запуск Flask приложения
     port = int(os.environ.get('PORT', 5000))
+    print(f"Запуск приложения на порту {port}")
+    print(f"Путь к шаблонам: {TEMPLATE_DIR}")
+    print(f"Путь к статическим файлам: {STATIC_DIR}")
     socketio.run(app, debug=False, host='0.0.0.0', port=port, use_reloader=False) 
