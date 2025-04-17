@@ -174,23 +174,23 @@
             if (!errorContainer) {
                 const container = document.createElement('div');
                 container.id = 'error-container';
-                container.className = 'alert alert-danger alert-dismissible fade show';
-                container.style.position = 'fixed';
-                container.style.top = '20px';
-                container.style.right = '20px';
-                container.style.zIndex = '9999';
+                container.className = 'position-fixed bottom-0 start-50 translate-middle-x mb-4';
+                container.style.zIndex = '1050';
                 document.body.appendChild(container);
             }
-            
-            errorContainer.innerHTML = `
+
+            const alert = document.createElement('div');
+            alert.className = 'alert alert-danger alert-dismissible fade show';
+            alert.innerHTML = `
                 ${message}
                 <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             `;
-            
-            // Автоматически скрываем ошибку через 5 секунд
+
+            document.getElementById('error-container').appendChild(alert);
+
             setTimeout(() => {
-                const alert = bootstrap.Alert.getOrCreateInstance(errorContainer);
-                alert.close();
+                alert.classList.remove('show');
+                setTimeout(() => alert.remove(), 150);
             }, 5000);
         }
 
@@ -205,172 +205,174 @@
 
         // Запускаем инициализацию Socket.IO
         initializeSocket();
-    });
 
-    // Функция обновления аналитики
-    function updateAnalytics() {
-        fetch('/api/analytics')
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    // Обновление статистики
-                    const elements = {
-                        'total-posts': data.total_posts,
-                        'posts-today': data.posts_today,
-                        'active-channels': data.active_channels,
-                        'total-reach': data.total_reach
-                    };
+        function updateChannelHealth() {
+            fetch('/api/channel-health')
+                .then(response => response.json())
+                .then(data => {
+                    const channelHealthContainer = document.getElementById('channel-health');
+                    if (!channelHealthContainer) return;
 
-                    // Безопасное обновление элементов
-                    Object.entries(elements).forEach(([id, value]) => {
-                        const element = document.getElementById(id);
-                        if (element) {
-                            element.textContent = value;
-                        }
+                    channelHealthContainer.innerHTML = '';
+                    
+                    Object.entries(data).forEach(([channelId, info]) => {
+                        const card = document.createElement('div');
+                        card.className = 'col-md-6 mb-4';
+                        
+                        const statusClass = info.status === 'active' ? 'bg-success' : 
+                                          info.status === 'inactive' ? 'bg-warning' : 'bg-danger';
+                        
+                        const lastPostTime = info.last_post_time ? 
+                            new Date(info.last_post_time).toLocaleString() : 'Нет данных';
+                        
+                        card.innerHTML = `
+                            <div class="card h-100">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <h5 class="mb-0">${info.title || channelId}</h5>
+                                    <span class="badge ${statusClass}">${info.status}</span>
+                                </div>
+                                <div class="card-body">
+                                    <ul class="list-group list-group-flush">
+                                        <li class="list-group-item d-flex justify-content-between">
+                                            <span>Подписчики:</span>
+                                            <strong>${info.member_count || 0}</strong>
+                                        </li>
+                                        <li class="list-group-item d-flex justify-content-between">
+                                            <span>Всего постов:</span>
+                                            <strong>${info.total_posts || 0}</strong>
+                                        </li>
+                                        <li class="list-group-item d-flex justify-content-between">
+                                            <span>Постов за неделю:</span>
+                                            <strong>${info.posts_per_week || 0}</strong>
+                                        </li>
+                                        <li class="list-group-item d-flex justify-content-between">
+                                            <span>Последний пост:</span>
+                                            <strong>${lastPostTime}</strong>
+                                        </li>
+                                    </ul>
+                                </div>
+                            </div>
+                        `;
+                        
+                        channelHealthContainer.appendChild(card);
+                    });
+                })
+                .catch(error => {
+                    console.error('Ошибка при получении данных о каналах:', error);
+                    showError('Не удалось загрузить информацию о каналах');
+                });
+        }
+
+        function updateSchedule() {
+            fetch('/api/schedule-preview')
+                .then(response => response.json())
+                .then(data => {
+                    const scheduleContainer = document.getElementById('schedule-preview');
+                    if (!scheduleContainer) return;
+
+                    scheduleContainer.innerHTML = '';
+                    
+                    if (!Array.isArray(data) || data.length === 0) {
+                        scheduleContainer.innerHTML = '<p class="text-muted">Нет запланированных публикаций</p>';
+                        return;
+                    }
+
+                    const table = document.createElement('table');
+                    table.className = 'table table-hover';
+                    table.innerHTML = `
+                        <thead>
+                            <tr>
+                                <th>Дата и время</th>
+                                <th>Канал</th>
+                                <th>Текст</th>
+                                <th>Статус</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    `;
+
+                    data.forEach(post => {
+                        const row = document.createElement('tr');
+                        const postTime = new Date(post.time).toLocaleString();
+                        row.innerHTML = `
+                            <td>${postTime}</td>
+                            <td>${post.channel}</td>
+                            <td>${post.text.substring(0, 50)}${post.text.length > 50 ? '...' : ''}</td>
+                            <td><span class="badge bg-warning">Ожидает</span></td>
+                        `;
+                        table.querySelector('tbody').appendChild(row);
                     });
 
-                    // Обновление графиков только если элементы существуют
-                    const activityChart = document.getElementById('activity-chart');
-                    if (activityChart) {
-                        const activityTrace = {
-                            x: Object.keys(data.activity_by_hour),
-                            y: Object.values(data.activity_by_hour),
-                            type: 'bar',
-                            marker: {
-                                color: '#2196F3'
-                            }
-                        };
+                    scheduleContainer.appendChild(table);
+                })
+                .catch(error => {
+                    console.error('Ошибка при получении расписания:', error);
+                    showError('Не удалось загрузить расписание публикаций');
+                });
+        }
 
-                        const activityLayout = {
-                            title: 'Активность по часам',
-                            paper_bgcolor: 'rgba(0,0,0,0)',
-                            plot_bgcolor: 'rgba(0,0,0,0)',
-                            font: {
-                                color: document.body.classList.contains('dark-theme') ? '#ffffff' : '#000000'
-                            },
-                            margin: { t: 30, r: 30, b: 40, l: 40 }
-                        };
-
-                        Plotly.newPlot('activity-chart', [activityTrace], activityLayout);
+        function updateAnalytics() {
+            fetch('/api/analytics')
+                .then(response => response.json())
+                .then(data => {
+                    if (!data.success) {
+                        throw new Error(data.error || 'Failed to load analytics');
                     }
 
-                    const contentTypeChart = document.getElementById('content-type-chart');
-                    if (contentTypeChart) {
-                        const contentTypeTrace = {
-                            values: [data.posts_with_photo, data.posts_without_photo],
-                            labels: ['С фото', 'Без фото'],
-                            type: 'pie',
-                            marker: {
-                                colors: ['#2196F3', '#FFC107']
-                            }
-                        };
+                    // Обновляем статистику
+                    document.getElementById('total-posts').textContent = data.total_posts;
+                    document.getElementById('posts-today').textContent = data.posts_today;
+                    document.getElementById('active-channels').textContent = data.active_channels;
+                    document.getElementById('total-reach').textContent = data.total_reach;
 
-                        const contentTypeLayout = {
-                            title: 'Типы контента',
-                            paper_bgcolor: 'rgba(0,0,0,0)',
-                            plot_bgcolor: 'rgba(0,0,0,0)',
-                            font: {
-                                color: document.body.classList.contains('dark-theme') ? '#ffffff' : '#000000'
-                            },
-                            margin: { t: 30, r: 30, b: 30, l: 30 }
-                        };
+                    // График активности по часам
+                    const activityData = {
+                        x: Object.keys(data.activity_by_hour),
+                        y: Object.values(data.activity_by_hour),
+                        type: 'bar',
+                        marker: {
+                            color: 'rgb(54, 162, 235)'
+                        }
+                    };
 
-                        Plotly.newPlot('content-type-chart', [contentTypeTrace], contentTypeLayout);
-                    }
-                }
-            })
-            .catch(error => console.error('Ошибка при обновлении аналитики:', error));
-    }
+                    const activityLayout = {
+                        title: 'Активность по часам',
+                        xaxis: {
+                            title: 'Час',
+                            tickmode: 'linear',
+                            tick0: 0,
+                            dtick: 1
+                        },
+                        yaxis: {
+                            title: 'Количество постов'
+                        },
+                        margin: { t: 30, l: 40, r: 20, b: 30 }
+                    };
 
-    // Функция обновления дашборда
-    function updateDashboard(posts) {
-        if (!posts) return;
-        
-        try {
-            // Обновляем статистику
-            const stats = calculateStats(posts);
-            updateStats(stats);
-            
-            // Обновляем графики
-            updateCharts(stats);
-            
-            // Обновляем список постов
-            updatePostsList(posts);
-        } catch (error) {
-            console.error('Error updating dashboard:', error);
+                    Plotly.newPlot('activity-chart', [activityData], activityLayout);
+
+                    // График типов контента
+                    const contentData = [{
+                        values: [data.posts_with_photo, data.posts_without_photo],
+                        labels: ['С фото', 'Без фото'],
+                        type: 'pie',
+                        hole: 0.4,
+                        marker: {
+                            colors: ['rgb(54, 162, 235)', 'rgb(255, 99, 132)']
+                        }
+                    }];
+
+                    const contentLayout = {
+                        title: 'Распределение контента',
+                        margin: { t: 30, l: 20, r: 20, b: 20 }
+                    };
+
+                    Plotly.newPlot('content-type-chart', contentData, contentLayout);
+                })
+                .catch(error => {
+                    console.error('Ошибка при получении аналитики:', error);
+                    showError('Не удалось загрузить аналитику');
+                });
         }
-    }
-
-    // Вспомогательные функции
-    function calculateStats(posts) {
-        const now = new Date();
-        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        
-        return {
-            total: posts.length,
-            today: posts.filter(post => new Date(post.time) >= today).length,
-            withPhoto: posts.filter(post => post.photo).length,
-            withoutPhoto: posts.filter(post => !post.photo).length,
-            scheduled: posts.filter(post => post.state === 'ожидает').length
-        };
-    }
-
-    function updateStats(stats) {
-        const elements = {
-            'total-posts': stats.total,
-            'posts-today': stats.today,
-            'posts-scheduled': stats.scheduled
-        };
-
-        Object.entries(elements).forEach(([id, value]) => {
-            const element = document.getElementById(id);
-            if (element) {
-                element.textContent = value;
-            }
-        });
-    }
-
-    function updateCharts(stats) {
-        // Обновление графика типов контента
-        const contentTypeData = {
-            values: [stats.withPhoto, stats.withoutPhoto],
-            labels: ['С фото', 'Без фото'],
-            type: 'pie'
-        };
-
-        const contentTypeLayout = {
-            title: 'Типы контента',
-            height: 300,
-            margin: { t: 30, b: 30, l: 30, r: 30 }
-        };
-
-        const contentTypeChart = document.getElementById('content-type-chart');
-        if (contentTypeChart) {
-            Plotly.newPlot('content-type-chart', [contentTypeData], contentTypeLayout);
-        }
-    }
-
-    function updatePostsList(posts) {
-        const container = document.getElementById('posts-list');
-        if (!container) return;
-
-        // Сортируем посты по времени
-        const sortedPosts = [...posts].sort((a, b) => 
-            new Date(b.time) - new Date(a.time)
-        );
-
-        // Обновляем список
-        container.innerHTML = sortedPosts.slice(0, 10).map(post => `
-            <div class="post-item mb-3">
-                <div class="d-flex justify-content-between">
-                    <small>${new Date(post.time).toLocaleString()}</small>
-                    <span class="badge ${post.state === 'выложен' ? 'bg-success' : 'bg-warning'}">
-                        ${post.state}
-                    </span>
-                </div>
-                <p class="mb-1">${post.text.substring(0, 100)}${post.text.length > 100 ? '...' : ''}</p>
-                ${post.photo ? `<img src="${post.photo}" class="img-thumbnail" style="max-width: 100px;">` : ''}
-            </div>
-        `).join('');
-    }
+    });
     </script> 

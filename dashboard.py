@@ -246,9 +246,25 @@ def index():
 
 @app.route('/health')
 def health_check():
-    if not service:
-        return 'Google Sheets API не инициализирован', 500
-    return 'OK', 200
+    """Health check endpoint for Render.com"""
+    try:
+        # Проверяем основные компоненты
+        components_status = {
+            "app": "healthy",
+            "redis": "healthy" if redis_client and redis_client.ping() else "unavailable",
+        }
+        return jsonify({
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "components": components_status
+        }), 200
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}", exc_info=True)
+        return jsonify({
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }), 500
 
 @app.route('/api/posts')
 def get_posts():
@@ -1177,8 +1193,10 @@ def generate_post_text():
 
 if __name__ == '__main__':
     try:
-        # Проверяем, не занят ли порт
+        # Получаем порт из переменной окружения (важно для Render.com)
         port = int(os.environ.get('PORT', 10000))
+        
+        # Проверяем, не занят ли порт
         import socket
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         result = sock.connect_ex(('0.0.0.0', port))
@@ -1191,6 +1209,9 @@ if __name__ == '__main__':
                 if result == 0:
                     port += 1
         sock.close()
+
+        # Настройка для работы за прокси
+        app.config['PREFERRED_URL_SCHEME'] = 'https'
         
         logger.info(f"Запуск приложения на порту {port}")
         logger.info(f"Путь к шаблонам: {TEMPLATE_DIR}")
@@ -1205,7 +1226,7 @@ if __name__ == '__main__':
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
         
-        # Запускаем приложение с обновленными настройками
+        # Запускаем приложение с настройками для продакшена
         socketio.run(
             app,
             host='0.0.0.0',
