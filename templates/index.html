@@ -7,15 +7,14 @@
         const MAX_RECONNECT_ATTEMPTS = 5;
         let pingInterval;
         let socket;
-        let currentTransport = 'websocket';
 
         function initializeSocket() {
             // Инициализация Socket.IO с обработкой ошибок
             socket = io({
                 path: '/socket.io',
-                transports: [currentTransport, 'polling'],
-                upgrade: false,  // Disable automatic upgrade
-                rememberUpgrade: false,
+                transports: ['polling', 'websocket'],
+                upgrade: true,
+                rememberUpgrade: true,
                 timeout: 60000,
                 reconnection: true,
                 reconnectionAttempts: MAX_RECONNECT_ATTEMPTS,
@@ -26,8 +25,7 @@
                 pingTimeout: 60000,
                 pingInterval: 25000,
                 query: {
-                    timestamp: Date.now(),
-                    transport: currentTransport
+                    timestamp: Date.now()
                 }
             });
 
@@ -52,16 +50,6 @@
                 if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
                     reconnectAttempts++;
                     console.log(`Attempting to reconnect (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
-                    
-                    // Switch transport on connection failure
-                    if (currentTransport === 'websocket' && reconnectAttempts === 2) {
-                        console.log('Switching to polling transport');
-                        currentTransport = 'polling';
-                        socket.close();
-                        initializeSocket();
-                        return;
-                    }
-                    
                     setTimeout(() => {
                         socket.connect();
                     }, 1000 * Math.min(reconnectAttempts * 2, 10));
@@ -74,14 +62,6 @@
                 console.error('Connection error:', error);
                 updateConnectionStatus('error', error.message);
                 stopPingInterval();
-
-                // Switch to polling if WebSocket fails
-                if (currentTransport === 'websocket') {
-                    console.log('WebSocket connection failed, switching to polling');
-                    currentTransport = 'polling';
-                    socket.close();
-                    initializeSocket();
-                }
             });
 
             socket.on('error', (error) => {
