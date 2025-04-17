@@ -291,6 +291,34 @@
                 </div>
             </div>
         </section>
+
+        <!-- Секция управления каналами -->
+        <div id="channels" class="section mb-4">
+            <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                <h2>Управление каналами</h2>
+                <button class="btn btn-primary" data-toggle="modal" data-target="#addChannelModal">
+                    <i class="fas fa-plus"></i> Добавить канал
+                </button>
+            </div>
+            
+            <div class="table-responsive">
+                <table class="table table-striped table-sm" id="channelsTable">
+                    <thead>
+                        <tr>
+                            <th>Название канала</th>
+                            <th>ID канала</th>
+                            <th>Лист</th>
+                            <th>Подписчики</th>
+                            <th>Статус</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Данные о каналах будут добавлены динамически -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
 
     <!-- Модальное окно нового поста -->
@@ -363,6 +391,40 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-mdb-dismiss="modal">Отмена</button>
                     <button type="button" class="btn btn-primary" id="savePost">Сохранить</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно добавления канала -->
+    <div class="modal fade" id="addChannelModal" tabindex="-1" role="dialog">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Добавить новый канал</h5>
+                    <button type="button" class="close" data-dismiss="modal">
+                        <span>&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <form id="addChannelForm">
+                        <div class="form-group">
+                            <label for="channelId">ID канала</label>
+                            <input type="text" class="form-control" id="channelId" required
+                                   placeholder="Например: @mychannel">
+                            <small class="form-text text-muted">Укажите ID канала, включая символ @</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="sheetName">Название листа</label>
+                            <input type="text" class="form-control" id="sheetName" required
+                                   placeholder="Например: Channel1">
+                            <small class="form-text text-muted">Название листа в Google Sheets</small>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-primary" id="saveChannel">Добавить</button>
                 </div>
             </div>
         </div>
@@ -621,6 +683,111 @@
             // Примерный расчет охвата (можно заменить на реальные данные)
             return Object.keys(channels).length * 1000;
         }
+
+        // Функции для работы с каналами
+        function loadChannels() {
+            fetch('/api/channels')
+                .then(response => response.json())
+                .then(data => {
+                    const tbody = document.querySelector('#channelsTable tbody');
+                    tbody.innerHTML = '';
+                    
+                    Object.entries(data).forEach(([channelId, info]) => {
+                        const row = document.createElement('tr');
+                        row.innerHTML = `
+                            <td>${info.title || 'Н/Д'}</td>
+                            <td>${channelId}</td>
+                            <td>${info.sheet_name}</td>
+                            <td>${info.member_count || 'Н/Д'}</td>
+                            <td>
+                                <span class="badge badge-${info.status === 'active' ? 'success' : 'danger'}">
+                                    ${info.status}
+                                </span>
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-danger delete-channel" data-channel="${channelId}">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+                    
+                    // Добавляем обработчики для кнопок удаления
+                    document.querySelectorAll('.delete-channel').forEach(button => {
+                        button.addEventListener('click', function() {
+                            const channelId = this.dataset.channel;
+                            if (confirm(`Удалить канал ${channelId}?`)) {
+                                deleteChannel(channelId);
+                            }
+                        });
+                    });
+                })
+                .catch(error => console.error('Ошибка загрузки каналов:', error));
+        }
+
+        function addChannel(channelId, sheetName) {
+            fetch('/api/channels', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    channel_id: channelId,
+                    sheet_name: sheetName
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('Ошибка: ' + data.error);
+                } else {
+                    $('#addChannelModal').modal('hide');
+                    loadChannels();
+                    document.getElementById('addChannelForm').reset();
+                }
+            })
+            .catch(error => {
+                console.error('Ошибка добавления канала:', error);
+                alert('Произошла ошибка при добавлении канала');
+            });
+        }
+
+        function deleteChannel(channelId) {
+            fetch(`/api/channels/${channelId}`, {
+                method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.error) {
+                    alert('Ошибка: ' + data.error);
+                } else {
+                    loadChannels();
+                }
+            })
+            .catch(error => {
+                console.error('Ошибка удаления канала:', error);
+                alert('Произошла ошибка при удалении канала');
+            });
+        }
+
+        // Обработчики событий
+        document.getElementById('saveChannel').addEventListener('click', function() {
+            const channelId = document.getElementById('channelId').value;
+            const sheetName = document.getElementById('sheetName').value;
+            
+            if (!channelId || !sheetName) {
+                alert('Заполните все поля');
+                return;
+            }
+            
+            addChannel(channelId, sheetName);
+        });
+
+        // Загружаем каналы при загрузке страницы
+        document.addEventListener('DOMContentLoaded', function() {
+            loadChannels();
+        });
     </script>
 </body>
 </html> 

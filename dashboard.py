@@ -25,7 +25,8 @@ import plotly.graph_objects as go
 import plotly.utils
 from urllib.parse import urlparse
 import eventlet
-eventlet.monkey_patch()
+import sys
+import signal
 
 # Настройка логирования
 logging.basicConfig(
@@ -40,7 +41,13 @@ logger = logging.getLogger(__name__)
 
 # Инициализация Redis для кэширования
 REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379')
-redis_client = redis.from_url(REDIS_URL)
+try:
+    redis_client = redis.from_url(REDIS_URL)
+    # Проверяем подключение
+    redis_client.ping()
+except redis.ConnectionError:
+    logger.warning("Не удалось подключиться к Redis. Кэширование будет отключено.")
+    redis_client = None
 
 # Определяем базовый путь для шаблонов и статических файлов
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -50,6 +57,9 @@ STATIC_DIR = os.path.join(BASE_DIR, 'static')
 # Создаем директории, если они не существуют
 os.makedirs(TEMPLATE_DIR, exist_ok=True)
 os.makedirs(STATIC_DIR, exist_ok=True)
+
+# Инициализация eventlet
+eventlet.monkey_patch(all=False, socket=True, select=True, thread=True)
 
 app = Flask(__name__, 
             template_folder=TEMPLATE_DIR,
@@ -248,9 +258,20 @@ def publish_now():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# Инициализация планировщика
+scheduler = BackgroundScheduler(
+    daemon=True,
+    timezone=pytz.utc,
+    job_defaults={
+        'coalesce': True,
+        'max_instances': 1,
+        'misfire_grace_time': 60
+    }
+)
+
 def background_tasks():
+    """Фоновая задача для обновления данных через WebSocket"""
     while True:
-        socketio.sleep(60)  # Обновление каждую минуту
         try:
             all_posts = []
             for sheet_name in CHANNELS_SHEETS.values():
@@ -258,40 +279,70 @@ def background_tasks():
                 all_posts.extend(posts)
             socketio.emit('posts_update', {'posts': all_posts})
         except Exception as e:
-            print(f"Ошибка в фоновой задаче: {e}")
+            logger.error(f"Ошибка в фоновой задаче: {e}")
+        finally:
+            eventlet.sleep(60)
 
 def publish_posts_all_channels():
-    now = datetime.now()
-    print(f"Текущее время: {now}")
-    for channel_id, sheet_name in CHANNELS_SHEETS.items():
-        print(f"Обработка листа '{sheet_name}' для канала '{channel_id}'...")
-        posts = get_posts_from_sheet(sheet_name)
-        for idx, post in enumerate(posts):
-            if post['editor_confirm'] and post['time'] <= now and post['state'] == 'ожидает':
-                try:
-                    if post['photo']:
-                        run_async(bot.send_photo(
-                            chat_id=channel_id,
-                            photo=post['photo'],
-                            caption=post['text']
-                        ))
-                    else:
-                        run_async(bot.send_message(
-                            chat_id=channel_id,
-                            text=post['text']
-                        ))
-                    print(f"[{datetime.now()}] Опубликовано в {channel_id}: {post['text']}")
-                    update_post_status(sheet_name, idx, new_status="выложен")
-                except Exception as e:
-                    print(f"Ошибка при публикации для канала {channel_id}: {e}")
+    """Публикация запланированных постов"""
+    try:
+        now = datetime.now()
+        logger.info(f"Запуск проверки публикаций в {now}")
+        
+        for channel_id, sheet_name in CHANNELS_SHEETS.items():
+            try:
+                posts = get_posts_from_sheet(sheet_name)
+                for idx, post in enumerate(posts):
+                    if post['editor_confirm'] and post['time'] <= now and post['state'].lower() == 'ожидает':
+                        try:
+                            # Добавляем задержку между публикациями
+                            if idx > 0:
+                                eventlet.sleep(2)
+                                
+                            logger.info(f"Попытка публикации в канал {channel_id}")
+                            if post['photo']:
+                                message = run_async(bot.send_photo(
+                                    chat_id=channel_id,
+                                    photo=post['photo'],
+                                    caption=post['text']
+                                ))
+                            else:
+                                message = run_async(bot.send_message(
+                                    chat_id=channel_id,
+                                    text=post['text']
+                                ))
+                            
+                            if message:
+                                logger.info(f"Успешная публикация в {channel_id}: {post['text'][:50]}...")
+                                update_post_status(sheet_name, idx, new_status="выложен")
+                            else:
+                                logger.error(f"Не удалось получить подтверждение публикации для {channel_id}")
+                                
+                        except Exception as e:
+                            logger.error(f"Ошибка при публикации в канал {channel_id}: {e}")
+                            update_post_status(sheet_name, idx, new_status="ошибка")
+            except Exception as e:
+                logger.error(f"Ошибка при обработке канала {channel_id}: {e}")
+    except Exception as e:
+        logger.error(f"Ошибка в задаче публикации: {e}")
 
-# Запуск фоновых задач
+# Настройка и запуск планировщика
+scheduler.add_job(
+    publish_posts_all_channels,
+    'interval',
+    minutes=1,
+    id='publish_posts_job',
+    replace_existing=True
+)
+
+try:
+    scheduler.start()
+    logger.info("Планировщик успешно запущен")
+except Exception as e:
+    logger.error(f"Ошибка при запуске планировщика: {e}")
+
+# Запуск фоновой задачи WebSocket
 socketio.start_background_task(background_tasks)
-
-# Запуск планировщика для автоматической публикации
-scheduler = BackgroundScheduler(timezone=pytz.utc)
-scheduler.add_job(publish_posts_all_channels, 'interval', minutes=1)
-scheduler.start()
 
 def get_analytics_data() -> Dict[str, Any]:
     """Получение аналитических данных по публикациям"""
@@ -740,16 +791,166 @@ def get_post_suggestions_api():
     """API endpoint для получения предложений по улучшению контента"""
     return jsonify(get_post_suggestions())
 
+# Добавляем новые эндпоинты для управления каналами
+@app.route('/api/channels', methods=['GET'])
+def get_channels():
+    """Получение списка каналов"""
+    try:
+        channels_info = {}
+        for channel_id, sheet_name in CHANNELS_SHEETS.items():
+            try:
+                # Получаем информацию о канале
+                chat_info = run_async(bot.get_chat(channel_id))
+                channels_info[channel_id] = {
+                    'sheet_name': sheet_name,
+                    'title': chat_info.title,
+                    'type': chat_info.type,
+                    'member_count': chat_info.member_count if hasattr(chat_info, 'member_count') else 0,
+                    'status': 'active'
+                }
+            except Exception as e:
+                channels_info[channel_id] = {
+                    'sheet_name': sheet_name,
+                    'error': str(e),
+                    'status': 'error'
+                }
+        return jsonify(channels_info)
+    except Exception as e:
+        logger.error(f"Ошибка при получении списка каналов: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/channels', methods=['POST'])
+def add_channel():
+    """Добавление нового канала"""
+    try:
+        data = request.json
+        channel_id = data.get('channel_id')
+        sheet_name = data.get('sheet_name')
+        
+        if not channel_id or not sheet_name:
+            return jsonify({'error': 'Необходимо указать channel_id и sheet_name'}), 400
+            
+        # Проверяем существование канала
+        try:
+            chat_info = run_async(bot.get_chat(channel_id))
+        except Exception as e:
+            return jsonify({'error': f'Канал не найден или бот не имеет доступа: {str(e)}'}), 400
+            
+        # Проверяем права бота в канале
+        try:
+            bot_member = run_async(bot.get_chat_member(channel_id, bot.id))
+            if not bot_member.can_post_messages:
+                return jsonify({'error': 'Бот не имеет прав на публикацию в канале'}), 400
+        except Exception as e:
+            return jsonify({'error': f'Ошибка проверки прав бота: {str(e)}'}), 400
+            
+        # Добавляем канал в конфигурацию
+        CHANNELS_SHEETS[channel_id] = sheet_name
+        
+        # Создаем лист в Google Sheets, если его нет
+        try:
+            service.spreadsheets().values().get(
+                spreadsheetId=SPREADSHEET_ID,
+                range=f"'{sheet_name}'!A1"
+            ).execute()
+        except Exception:
+            # Создаем новый лист
+            try:
+                service.spreadsheets().batchUpdate(
+                    spreadsheetId=SPREADSHEET_ID,
+                    body={
+                        'requests': [{
+                            'addSheet': {
+                                'properties': {
+                                    'title': sheet_name,
+                                    'gridProperties': {
+                                        'rowCount': 1000,
+                                        'columnCount': 6
+                                    }
+                                }
+                            }
+                        }]
+                    }
+                ).execute()
+                
+                # Добавляем заголовки
+                service.spreadsheets().values().update(
+                    spreadsheetId=SPREADSHEET_ID,
+                    range=f"'{sheet_name}'!A1:F1",
+                    valueInputOption='RAW',
+                    body={
+                        'values': [['Дата', 'Время', 'Фото', 'Текст', 'Подтверждено', 'Статус']]
+                    }
+                ).execute()
+            except Exception as e:
+                return jsonify({'error': f'Ошибка создания листа: {str(e)}'}), 500
+                
+        return jsonify({
+            'success': True,
+            'channel': {
+                'id': channel_id,
+                'title': chat_info.title,
+                'sheet_name': sheet_name
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Ошибка при добавлении канала: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/channels/<channel_id>', methods=['DELETE'])
+def delete_channel(channel_id):
+    """Удаление канала"""
+    try:
+        if channel_id not in CHANNELS_SHEETS:
+            return jsonify({'error': 'Канал не найден'}), 404
+            
+        sheet_name = CHANNELS_SHEETS[channel_id]
+        del CHANNELS_SHEETS[channel_id]
+        
+        return jsonify({'success': True, 'message': f'Канал {channel_id} удален'})
+    except Exception as e:
+        logger.error(f"Ошибка при удалении канала: {e}")
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
-    # Запуск Flask приложения
-    port = int(os.environ.get('PORT', 10000))
-    print(f"Запуск приложения на порту {port}")
-    print(f"Путь к шаблонам: {TEMPLATE_DIR}")
-    print(f"Путь к статическим файлам: {STATIC_DIR}")
-    socketio.run(app, 
-                debug=False, 
-                host='0.0.0.0', 
-                port=port, 
-                use_reloader=False,
-                log_output=True,
-                websocket=True) 
+    try:
+        # Проверяем, не занят ли порт
+        port = int(os.environ.get('PORT', 10000))
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        result = sock.connect_ex(('0.0.0.0', port))
+        if result == 0:
+            logger.error(f"Порт {port} уже используется")
+            # Пробуем использовать следующий доступный порт
+            port += 1
+            while result == 0 and port < 65535:
+                result = sock.connect_ex(('0.0.0.0', port))
+                if result == 0:
+                    port += 1
+        sock.close()
+        
+        logger.info(f"Запуск приложения на порту {port}")
+        logger.info(f"Путь к шаблонам: {TEMPLATE_DIR}")
+        logger.info(f"Путь к статическим файлам: {STATIC_DIR}")
+        
+        # Устанавливаем обработчик сигналов для корректного завершения
+        def signal_handler(sig, frame):
+            logger.info("Получен сигнал завершения, останавливаем приложение...")
+            socketio.stop()
+            sys.exit(0)
+        
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+        
+        # Запускаем приложение
+        socketio.run(app, 
+                    debug=False, 
+                    host='0.0.0.0', 
+                    port=port, 
+                    use_reloader=False,
+                    log_output=True,
+                    websocket=True)
+    except Exception as e:
+        logger.error(f"Ошибка при запуске приложения: {e}")
+        raise 
