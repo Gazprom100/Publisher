@@ -3,176 +3,332 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Панель управления Telegram Publisher</title>
+    <title>Панель управления публикациями</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.7.2/font/bootstrap-icons.css" rel="stylesheet">
-    <link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
+    <link href="/static/style.css" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark mb-4">
-        <div class="container">
+    <!-- Навигация -->
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container-fluid">
             <a class="navbar-brand" href="#">
-                <i class="bi bi-send-fill me-2"></i>
-                Telegram Publisher
+                <i class="bi bi-broadcast"></i> Publisher
             </a>
-            <div class="text-light">
-                <small>Деплой: Render.com</small>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#analytics">
+                            <i class="bi bi-graph-up"></i> Аналитика
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#schedule">
+                            <i class="bi bi-calendar3"></i> Расписание
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#channels">
+                            <i class="bi bi-broadcast-pin"></i> Каналы
+                        </a>
+                    </li>
+                </ul>
             </div>
         </div>
     </nav>
 
-    <div class="container">
-        <div class="deploy-info">
-            <h5><i class="bi bi-info-circle"></i> Информация о системе</h5>
-            <p>Система автоматической публикации в Telegram каналы. Проект развернут на Render.com и подключен к GitHub для автоматического обновления.</p>
-        </div>
-
-        <div class="row mb-4">
-            <div class="col-md-3">
-                <div class="card stats-card">
-                    <h5>Всего постов</h5>
-                    <div class="stats-number" id="total-posts">0</div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card stats-card">
-                    <h5>Ожидают</h5>
-                    <div class="stats-number" id="waiting-posts">0</div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card stats-card">
-                    <h5>Опубликовано</h5>
-                    <div class="stats-number" id="published-posts">0</div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card stats-card">
-                    <h5>Ошибки</h5>
-                    <div class="stats-number" id="error-posts">0</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="row">
-            <div class="col-md-12">
-                <div class="card">
-                    <div class="card-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0">Управление постами</h5>
-                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newPostModal">
-                            <i class="bi bi-plus-lg"></i> Новый пост
-                        </button>
+    <div class="container-fluid py-4">
+        <!-- Секция аналитики -->
+        <section id="analytics" class="mb-5">
+            <h2 class="section-title">Аналитика</h2>
+            
+            <!-- Основные метрики -->
+            <div class="row g-4 mb-4">
+                <div class="col-md-3">
+                    <div class="stats-card">
+                        <div class="card-body">
+                            <h5>Всего постов</h5>
+                            <div class="stats-number" id="total-posts">0</div>
+                            <div class="stats-period">За все время</div>
+                        </div>
                     </div>
-                    <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table table-hover">
-                                <thead>
-                                    <tr>
-                                        <th>Дата</th>
-                                        <th>Время</th>
-                                        <th>Контент</th>
-                                        <th>Статус</th>
-                                        <th>Действия</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="posts-table">
-                                    <!-- Посты будут загружены здесь -->
-                                </tbody>
-                            </table>
+                </div>
+                <div class="col-md-3">
+                    <div class="stats-card">
+                        <div class="card-body">
+                            <h5>Постов сегодня</h5>
+                            <div class="stats-number" id="posts-today">0</div>
+                            <div class="stats-period">За 24 часа</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stats-card">
+                        <div class="card-body">
+                            <h5>Постов на этой неделе</h5>
+                            <div class="stats-number" id="posts-week">0</div>
+                            <div class="stats-period">За 7 дней</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stats-card">
+                        <div class="card-body">
+                            <h5>Постов в этом месяце</h5>
+                            <div class="stats-number" id="posts-month">0</div>
+                            <div class="stats-period">За 30 дней</div>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
+
+            <!-- Графики -->
+            <div class="row g-4 mb-4">
+                <div class="col-md-8">
+                    <div class="card">
+                        <div class="card-body">
+                            <h5 class="card-title">Активность по времени суток</h5>
+                            <div id="activity-chart"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card">
+                        <div class="card-body">
+                            <h5 class="card-title">Типы контента</h5>
+                            <div id="content-types-chart"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Рекомендации -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h5 class="card-title">
+                        <i class="bi bi-lightbulb"></i> Рекомендации по улучшению
+                    </h5>
+                    <div id="suggestions-list" class="list-group list-group-flush">
+                        <!-- Здесь будут отображаться рекомендации -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Секция каналов -->
+        <section id="channels" class="mb-5">
+            <h2 class="section-title">Каналы</h2>
+            <div class="row g-4" id="channel-health">
+                <!-- Здесь будут карточки каналов -->
+            </div>
+        </section>
+
+        <!-- Секция расписания -->
+        <section id="schedule" class="mb-5">
+            <h2 class="section-title">Расписание публикаций</h2>
+            
+            <!-- Кнопка добавления поста -->
+            <div class="mb-4">
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newPostModal">
+                    <i class="bi bi-plus-lg"></i> Добавить пост
+                </button>
+            </div>
+
+            <!-- Таблица расписания -->
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Дата</th>
+                            <th>Время</th>
+                            <th>Канал</th>
+                            <th>Контент</th>
+                            <th>Статус</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody id="schedule-table">
+                        <!-- Здесь будут строки расписания -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
     </div>
 
     <!-- Модальное окно нового поста -->
     <div class="modal fade" id="newPostModal" tabindex="-1">
-        <div class="modal-dialog">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Создание нового поста</h5>
+                    <h5 class="modal-title">Новый пост</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <form id="newPostForm">
-                        <div class="mb-3">
-                            <label class="form-label">Дата</label>
-                            <input type="date" class="form-control" name="date" required>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Дата публикации</label>
+                                <input type="date" class="form-control" id="postDate" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Время публикации</label>
+                                <input type="time" class="form-control" id="postTime" required>
+                            </div>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label">Время</label>
-                            <input type="time" class="form-control" name="time" required>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">URL фото (опционально)</label>
-                            <input type="url" class="form-control" name="photo">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Текст</label>
-                            <textarea class="form-control" name="text" rows="3" required></textarea>
-                        </div>
+                        
                         <div class="mb-3">
                             <label class="form-label">Канал</label>
-                            <select class="form-select" name="channel" required>
-                                <option value="@KConsult_ing">K.Consulting</option>
-                                <option value="@Vegzzzbaj">Vegzzzbaj</option>
+                            <select class="form-select" id="postChannel" required>
+                                <option value="">Выберите канал</option>
+                                <!-- Опции будут добавлены динамически -->
                             </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">URL изображения</label>
+                            <div class="input-group">
+                                <input type="url" class="form-control" id="postPhoto" placeholder="https://...">
+                                <button class="btn btn-outline-secondary" type="button" id="validateImage">
+                                    Проверить
+                                </button>
+                            </div>
+                            <div class="form-text">Необязательно. Максимальный размер: 5MB</div>
+                        </div>
+
+                        <div class="mb-3" id="photoPreview" style="display: none;">
+                            <img src="" alt="Preview" class="img-fluid rounded">
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Текст поста</label>
+                            <textarea class="form-control" id="postText" rows="5" required></textarea>
+                            <div class="form-text">
+                                <span id="charCount">0</span>/2000 символов
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="postAnalysis">
+                                <label class="form-check-label">
+                                    Анализировать пост перед публикацией
+                                </label>
+                            </div>
+                        </div>
+
+                        <div id="postAnalysisResult" class="alert alert-info" style="display: none;">
+                            <!-- Здесь будут результаты анализа -->
                         </div>
                     </form>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Закрыть</button>
-                    <button type="button" class="btn btn-primary" onclick="createNewPost()">Создать</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                    <button type="button" class="btn btn-primary" id="savePost">Сохранить</button>
                 </div>
             </div>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.socket.io/4.0.1/socket.io.min.js"></script>
     <script>
+        // Инициализация Socket.IO
         const socket = io();
-        
-        function updateStats(posts) {
-            const total = posts.length;
-            const waiting = posts.filter(p => p.state === 'ожидает').length;
-            const published = posts.filter(p => p.state === 'выложен').length;
-            const errors = posts.filter(p => p.state === 'ошибка').length;
-            
-            document.getElementById('total-posts').textContent = total;
-            document.getElementById('waiting-posts').textContent = waiting;
-            document.getElementById('published-posts').textContent = published;
-            document.getElementById('error-posts').textContent = errors;
+
+        // Обновление данных в реальном времени
+        socket.on('posts_update', function(data) {
+            updateDashboard(data.posts);
+        });
+
+        // Функции обновления интерфейса
+        function updateDashboard(posts) {
+            updateStatistics(posts);
+            updateScheduleTable(posts);
+            updateChannelHealth();
+            updateCharts();
         }
-        
-        function updatePostsTable(posts) {
-            const tbody = document.getElementById('posts-table');
+
+        // Обновление статистики
+        function updateStatistics(posts) {
+            fetch('/api/post-statistics')
+                .then(response => response.json())
+                .then(stats => {
+                    document.getElementById('total-posts').textContent = stats.total;
+                    document.getElementById('posts-today').textContent = stats.published;
+                    document.getElementById('posts-week').textContent = stats.with_photo;
+                    document.getElementById('posts-month').textContent = stats.total;
+                });
+        }
+
+        // Обновление графиков
+        function updateCharts() {
+            // График активности
+            fetch('/api/content-distribution')
+                .then(response => response.json())
+                .then(figure => {
+                    Plotly.newPlot('content-types-chart', figure.data, figure.layout);
+                });
+
+            // Другие графики...
+        }
+
+        // Обновление здоровья каналов
+        function updateChannelHealth() {
+            fetch('/api/engagement-metrics')
+                .then(response => response.json())
+                .then(metrics => {
+                    const container = document.getElementById('channel-health');
+                    container.innerHTML = '';
+                    
+                    for (const [channelId, data] of Object.entries(metrics)) {
+                        const card = document.createElement('div');
+                        card.className = 'col-md-6 col-lg-4';
+                        card.innerHTML = `
+                            <div class="card h-100">
+                                <div class="card-body">
+                                    <h5 class="card-title">${channelId}</h5>
+                                    <p class="card-text">
+                                        <strong>Подписчиков:</strong> ${data.member_count}<br>
+                                        <strong>Постов в день:</strong> ${data.posts_per_day}<br>
+                                        <strong>Охват:</strong> ~${data.estimated_reach}
+                                    </p>
+                                </div>
+                            </div>
+                        `;
+                        container.appendChild(card);
+                    }
+                });
+        }
+
+        // Обновление таблицы расписания
+        function updateScheduleTable(posts) {
+            const tbody = document.getElementById('schedule-table');
             tbody.innerHTML = '';
-            
-            posts.forEach((post, index) => {
+
+            posts.forEach(post => {
                 const row = document.createElement('tr');
                 row.innerHTML = `
-                    <td>${post.date}</td>
-                    <td>${post.time}</td>
+                    <td>${formatDate(post.time)}</td>
+                    <td>${formatTime(post.time)}</td>
+                    <td>${post.channel || '-'}</td>
                     <td>
-                        ${post.photo ? `<img src="${post.photo}" class="img-thumbnail" style="max-height: 50px;">` : ''}
-                        <div>${post.text}</div>
+                        ${post.photo ? '<i class="bi bi-image"></i> ' : ''}
+                        ${truncateText(post.text, 50)}
                     </td>
                     <td>
-                        <span class="status-badge status-${post.state === 'ожидает' ? 'waiting' : 
-                            post.state === 'выложен' ? 'published' : 'error'}">
+                        <span class="status-badge status-${post.state}">
                             ${post.state}
                         </span>
                     </td>
                     <td class="action-buttons">
-                        <button class="btn btn-sm btn-success" onclick="publishNow(${index})" title="Опубликовать сейчас">
-                            <i class="bi bi-send"></i>
-                        </button>
-                        <button class="btn btn-sm btn-warning" onclick="editPost(${index})" title="Редактировать">
+                        <button class="btn btn-sm btn-primary" onclick="editPost(${post.id})">
                             <i class="bi bi-pencil"></i>
                         </button>
-                        <button class="btn btn-sm btn-danger" onclick="deletePost(${index})" title="Удалить">
+                        <button class="btn btn-sm btn-danger" onclick="deletePost(${post.id})">
                             <i class="bi bi-trash"></i>
                         </button>
                     </td>
@@ -180,72 +336,110 @@
                 tbody.appendChild(row);
             });
         }
-        
-        function loadPosts() {
-            fetch('/api/posts')
+
+        // Загрузка рекомендаций
+        function loadSuggestions() {
+            fetch('/api/post-suggestions')
                 .then(response => response.json())
-                .then(posts => {
-                    updateStats(posts);
-                    updatePostsTable(posts);
-                })
-                .catch(error => console.error('Ошибка загрузки постов:', error));
+                .then(suggestions => {
+                    const container = document.getElementById('suggestions-list');
+                    container.innerHTML = '';
+                    
+                    suggestions.forEach(suggestion => {
+                        const item = document.createElement('div');
+                        item.className = 'list-group-item';
+                        item.innerHTML = `
+                            <div class="d-flex align-items-center">
+                                <span class="badge bg-${suggestion.importance === 'high' ? 'danger' : 'warning'} me-2">
+                                    ${suggestion.importance}
+                                </span>
+                                ${suggestion.suggestion}
+                            </div>
+                        `;
+                        container.appendChild(item);
+                    });
+                });
         }
-        
-        function createNewPost() {
-            const form = document.getElementById('newPostForm');
-            const formData = new FormData(form);
-            const data = Object.fromEntries(formData.entries());
-            
-            fetch('/api/update_status', {
+
+        // Валидация изображения
+        document.getElementById('validateImage').addEventListener('click', function() {
+            const url = document.getElementById('postPhoto').value;
+            if (!url) return;
+
+            fetch('/api/validate-image', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    ...data,
-                    editor_confirm: true,
-                    state: 'ожидает'
-                })
+                body: JSON.stringify({ url })
             })
             .then(response => response.json())
-            .then(result => {
-                if (result.success) {
-                    loadPosts();
-                    bootstrap.Modal.getInstance(document.getElementById('newPostModal')).hide();
-                    form.reset();
+            .then(data => {
+                if (data.valid) {
+                    document.getElementById('photoPreview').style.display = 'block';
+                    document.getElementById('photoPreview').querySelector('img').src = url;
+                } else {
+                    alert('Неверный формат изображения или превышен размер');
                 }
-            })
-            .catch(error => console.error('Ошибка создания поста:', error));
-        }
-        
-        function publishNow(index) {
-            fetch('/api/publish_now', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    channel_id: document.querySelector('select[name="channel"]').value,
-                    text: document.querySelector('textarea[name="text"]').value,
-                    photo: document.querySelector('input[name="photo"]').value
-                })
-            })
-            .then(response => response.json())
-            .then(result => {
-                if (result.success) {
-                    loadPosts();
-                }
-            })
-            .catch(error => console.error('Ошибка публикации поста:', error));
-        }
-        
-        socket.on('posts_update', function(data) {
-            updateStats(data.posts);
-            updatePostsTable(data.posts);
+            });
         });
-        
-        // Начальная загрузка
-        loadPosts();
+
+        // Анализ поста
+        document.getElementById('postAnalysis').addEventListener('change', function() {
+            if (!this.checked) {
+                document.getElementById('postAnalysisResult').style.display = 'none';
+                return;
+            }
+
+            const postData = {
+                text: document.getElementById('postText').value,
+                photo: document.getElementById('postPhoto').value,
+                time: new Date(
+                    document.getElementById('postDate').value + 'T' + 
+                    document.getElementById('postTime').value
+                )
+            };
+
+            fetch('/api/analyze-post', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(postData)
+            })
+            .then(response => response.json())
+            .then(analysis => {
+                const resultDiv = document.getElementById('postAnalysisResult');
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = `
+                    <h6>Оценка поста: ${analysis.score}/3</h6>
+                    ${analysis.feedback.map(f => `<p>• ${f}</p>`).join('')}
+                    ${analysis.optimization_tips.length > 0 ? '<h6>Советы по улучшению:</h6>' : ''}
+                    ${analysis.optimization_tips.map(tip => `<p>• ${tip}</p>`).join('')}
+                `;
+            });
+        });
+
+        // Вспомогательные функции
+        function formatDate(dateStr) {
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('ru-RU');
+        }
+
+        function formatTime(dateStr) {
+            const date = new Date(dateStr);
+            return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function truncateText(text, length) {
+            return text.length > length ? text.substring(0, length) + '...' : text;
+        }
+
+        // Инициализация
+        document.addEventListener('DOMContentLoaded', function() {
+            updateDashboard([]);
+            loadSuggestions();
+        });
     </script>
 </body>
 </html> 

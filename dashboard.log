@@ -1,0 +1,9 @@
+2025-04-17 12:34:44,406 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2025-04-17 12:34:44,409 - apscheduler.scheduler - INFO - Added job "publish_posts_all_channels" to job store "default"
+2025-04-17 12:34:44,410 - apscheduler.scheduler - INFO - Scheduler started
+2025-04-17 12:35:04,215 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2025-04-17 12:35:04,217 - apscheduler.scheduler - INFO - Added job "publish_posts_all_channels" to job store "default"
+2025-04-17 12:35:04,217 - apscheduler.scheduler - INFO - Scheduler started
+2025-04-17 12:36:11,974 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2025-04-17 12:36:11,976 - apscheduler.scheduler - INFO - Added job "publish_posts_all_channels" to job store "default"
+2025-04-17 12:36:11,977 - apscheduler.scheduler - INFO - Scheduler started
