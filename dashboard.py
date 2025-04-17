@@ -59,7 +59,7 @@ os.makedirs(TEMPLATE_DIR, exist_ok=True)
 os.makedirs(STATIC_DIR, exist_ok=True)
 
 # Инициализация eventlet до создания приложения
-eventlet.monkey_patch(socket=True, select=True, thread=False)
+eventlet.monkey_patch(socket=True, select=True, thread=True)
 
 app = Flask(__name__, 
             template_folder=TEMPLATE_DIR,
@@ -83,7 +83,8 @@ socketio = SocketIO(
     reconnection_attempts=5,
     reconnection_delay=1000,
     reconnection_delay_max=5000,
-    path='/socket.io'  # Явно указываем путь
+    path='/socket.io',  # Явно указываем путь
+    websocket_class=eventlet.websocket.WebSocket  # Explicitly set WebSocket class
 )
 
 # Обновленные обработчики событий Socket.IO
@@ -1215,8 +1216,9 @@ if __name__ == '__main__':
             log_output=True,
             allow_unsafe_werkzeug=True,
             websocket=True,
-            cors_allowed_origins='*'
+            cors_allowed_origins='*',
+            ssl_context=None  # Explicitly disable SSL for local development
         )
     except Exception as e:
         logger.error(f"Ошибка при запуске приложения: {e}", exc_info=True)
-        raise 
+        sys.exit(1)  # Use proper exit code instead of bare raise 

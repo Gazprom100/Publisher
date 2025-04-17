@@ -7,31 +7,33 @@
         const MAX_RECONNECT_ATTEMPTS = 5;
         let pingInterval;
         let socket;
+        let currentTransport = 'websocket';
 
         function initializeSocket() {
             // Инициализация Socket.IO с обработкой ошибок
             socket = io({
                 path: '/socket.io',
-                transports: ['websocket', 'polling'],
-                upgrade: true,
-                rememberUpgrade: true,
-                timeout: 60000,  // Увеличено до 60 секунд
+                transports: [currentTransport, 'polling'],
+                upgrade: false,  // Disable automatic upgrade
+                rememberUpgrade: false,
+                timeout: 60000,
                 reconnection: true,
                 reconnectionAttempts: MAX_RECONNECT_ATTEMPTS,
                 reconnectionDelay: 1000,
                 reconnectionDelayMax: 5000,
                 autoConnect: true,
                 forceNew: true,
-                pingTimeout: 60000,  // Увеличено до 60 секунд
-                pingInterval: 25000,  // Увеличено до 25 секунд
+                pingTimeout: 60000,
+                pingInterval: 25000,
                 query: {
-                    timestamp: Date.now()  // Предотвращаем кэширование
+                    timestamp: Date.now(),
+                    transport: currentTransport
                 }
             });
 
             // Обработчики событий Socket.IO
             socket.on('connect', () => {
-                console.log('Connected to server');
+                console.log('Connected to server using', socket.io.engine.transport.name);
                 reconnectAttempts = 0;
                 updateConnectionStatus('connected');
                 startPingInterval();
@@ -50,9 +52,19 @@
                 if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
                     reconnectAttempts++;
                     console.log(`Attempting to reconnect (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+                    
+                    // Switch transport on connection failure
+                    if (currentTransport === 'websocket' && reconnectAttempts === 2) {
+                        console.log('Switching to polling transport');
+                        currentTransport = 'polling';
+                        socket.close();
+                        initializeSocket();
+                        return;
+                    }
+                    
                     setTimeout(() => {
                         socket.connect();
-                    }, 1000 * Math.min(reconnectAttempts * 2, 10));  // Экспоненциальная задержка
+                    }, 1000 * Math.min(reconnectAttempts * 2, 10));
                 } else {
                     showError('Превышено максимальное количество попыток переподключения. Обновите страницу.');
                 }
@@ -63,11 +75,12 @@
                 updateConnectionStatus('error', error.message);
                 stopPingInterval();
 
-                // Попытка переключения на polling при ошибке websocket
-                if (socket.io.engine.transport.name === 'websocket') {
-                    console.log('WebSocket connection failed, falling back to polling');
-                    socket.io.engine.transport.name = 'polling';
-                    socket.connect();
+                // Switch to polling if WebSocket fails
+                if (currentTransport === 'websocket') {
+                    console.log('WebSocket connection failed, switching to polling');
+                    currentTransport = 'polling';
+                    socket.close();
+                    initializeSocket();
                 }
             });
 
