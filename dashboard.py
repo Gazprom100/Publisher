@@ -10,8 +10,8 @@ import threading
 import asyncio
 from telegram import Bot
 from apscheduler.schedulers.background import BackgroundScheduler
-import eventlet
-eventlet.monkey_patch()
+from gevent import monkey
+monkey.patch_all()
 
 # Определяем базовый путь для шаблонов и статических файлов
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -25,7 +25,7 @@ os.makedirs(STATIC_DIR, exist_ok=True)
 app = Flask(__name__, 
             template_folder=TEMPLATE_DIR,
             static_folder=STATIC_DIR)
-socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins='*')
+socketio = SocketIO(app, async_mode='gevent', cors_allowed_origins='*')
 
 # Загрузка конфигурации из переменных окружения
 SERVICE_ACCOUNT_FILE = os.getenv("SERVICE_ACCOUNT_FILE", "service_account.json")
