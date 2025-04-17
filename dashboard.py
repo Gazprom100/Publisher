@@ -85,10 +85,27 @@ else:
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID", "1FUoF6V9whpPMfEml__rpqmGKPs5ohhLUI1s7D1N0SG8")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8006930667:AAHHpNFS3ySj8hzteC-mmg0YBtHnSf8jREs")
 
-# Конфигурация каналов
+# Конфигурация каналов и лент
 CHANNELS_SHEETS = {
     "@KConsult_ing": "K",
     "@Vegzzzbaj": "Vegzzzbaj"
+}
+
+FEEDS = {
+    "tech": {
+        "name": "Технологии",
+        "sources": ["https://habr.com/rss/best/daily/", "https://tproger.ru/feed/"],
+        "keywords": ["python", "javascript", "программирование", "разработка"],
+        "excluded_keywords": ["вакансия", "работа"],
+        "min_rating": 10
+    },
+    "business": {
+        "name": "Бизнес",
+        "sources": ["https://vc.ru/rss/all", "https://rb.ru/feed/"],
+        "keywords": ["стартап", "бизнес", "предпринимательство"],
+        "excluded_keywords": ["происшествия"],
+        "min_rating": 5
+    }
 }
 
 # Инициализация сервиса Google Sheets
@@ -269,19 +286,66 @@ scheduler = BackgroundScheduler(
     }
 )
 
+def fetch_feed_items(feed_config):
+    """Получает записи из RSS-лент с учетом фильтров"""
+    import feedparser
+    from datetime import datetime, timedelta
+    
+    items = []
+    for source in feed_config['sources']:
+        try:
+            feed = feedparser.parse(source)
+            for entry in feed.entries:
+                # Проверяем ключевые слова
+                text = f"{entry.title} {entry.description}".lower()
+                
+                if not any(kw.lower() in text for kw in feed_config['keywords']):
+                    continue
+                    
+                if any(kw.lower() in text for kw in feed_config['excluded_keywords']):
+                    continue
+                
+                # Получаем дату публикации
+                pub_date = datetime(*entry.published_parsed[:6])
+                
+                # Пропускаем старые записи (старше 24 часов)
+                if datetime.now() - pub_date > timedelta(hours=24):
+                    continue
+                
+                items.append({
+                    'title': entry.title,
+                    'description': entry.description,
+                    'link': entry.link,
+                    'published': pub_date.isoformat(),
+                    'source': source
+                })
+        except Exception as e:
+            logger.error(f"Ошибка при получении ленты {source}: {e}")
+            
+    return items
+
 def background_tasks():
     """Фоновая задача для обновления данных через WebSocket"""
     while True:
         try:
+            # Обновляем данные постов
             all_posts = []
             for sheet_name in CHANNELS_SHEETS.values():
                 posts = get_posts_from_sheet(sheet_name)
                 all_posts.extend(posts)
             socketio.emit('posts_update', {'posts': all_posts})
+            
+            # Обновляем данные из лент
+            feed_items = {}
+            for feed_id, feed_config in FEEDS.items():
+                items = fetch_feed_items(feed_config)
+                feed_items[feed_id] = items
+            socketio.emit('feeds_update', {'feeds': feed_items})
+            
         except Exception as e:
             logger.error(f"Ошибка в фоновой задаче: {e}")
         finally:
-            eventlet.sleep(60)
+            eventlet.sleep(300)  # Проверяем каждые 5 минут
 
 def publish_posts_all_channels():
     """Публикация запланированных постов"""
@@ -402,16 +466,16 @@ def get_analytics():
     try:
         analytics_data = get_analytics_data()
         
-        # Format data for frontend charts
+        # Форматируем данные для графиков
         activity_chart = {
             'x': list(range(24)),
             'y': [analytics_data['posts_by_hour'].get(h, 0) for h in range(24)],
             'type': 'bar',
-            'name': 'Posts by Hour'
+            'name': 'Публикации по часам'
         }
         
         content_chart = {
-            'labels': ['With Photo', 'Text Only'],
+            'labels': ['С фото', 'Только текст'],
             'values': [
                 analytics_data['content_stats']['with_photo'],
                 analytics_data['content_stats']['text_only']
@@ -431,7 +495,7 @@ def get_analytics():
             'content_chart': content_chart
         })
     except Exception as e:
-        logger.error(f"Error getting analytics: {e}")
+        logger.error(f"Ошибка при получении аналитики: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/channel-health')
@@ -801,20 +865,20 @@ def get_channels():
                     'title': chat.title,
                     'member_count': getattr(chat, 'member_count', 0),
                     'sheet_name': CHANNELS_SHEETS[channel_id],
-                    'status': 'active'
+                    'status': 'активен'
                 }
             except Exception as e:
-                logger.error(f"Error getting channel {channel_id} info: {e}")
+                logger.error(f"Ошибка при получении информации о канале {channel_id}: {e}")
                 channels[channel_id] = {
-                    'title': 'Unknown',
+                    'title': 'Неизвестно',
                     'member_count': 0,
                     'sheet_name': CHANNELS_SHEETS[channel_id],
-                    'status': 'error',
+                    'status': 'ошибка',
                     'error': str(e)
                 }
         return jsonify(channels)
     except Exception as e:
-        logger.error(f"Error getting channels: {e}")
+        logger.error(f"Ошибка при получении списка каналов: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/channels', methods=['POST'])
@@ -825,19 +889,19 @@ def add_channel():
         sheet_name = data.get('sheet_name')
         
         if not channel_id or not sheet_name:
-            return jsonify({'error': 'Missing channel_id or sheet_name'}), 400
+            return jsonify({'error': 'Отсутствует channel_id или sheet_name'}), 400
             
-        # Check if channel exists
+        # Проверяем существование канала
         try:
             chat = run_async(bot.get_chat(channel_id))
-            # Check if bot has permission to post messages
+            # Проверяем права бота на публикацию
             member = run_async(bot.get_chat_member(channel_id, bot.id))
             if not member.can_post_messages:
-                return jsonify({'error': 'Bot does not have permission to post in this channel'}), 403
+                return jsonify({'error': 'У бота нет прав на публикацию в этом канале'}), 403
         except Exception as e:
-            return jsonify({'error': f'Could not access channel: {str(e)}'}), 400
+            return jsonify({'error': f'Не удалось получить доступ к каналу: {str(e)}'}), 400
             
-        # Add to CHANNELS_SHEETS
+        # Добавляем в CHANNELS_SHEETS
         CHANNELS_SHEETS[channel_id] = sheet_name
         
         return jsonify({
@@ -846,23 +910,23 @@ def add_channel():
                 'title': chat.title,
                 'member_count': getattr(chat, 'member_count', 0),
                 'sheet_name': sheet_name,
-                'status': 'active'
+                'status': 'активен'
             }
         })
     except Exception as e:
-        logger.error(f"Error adding channel: {e}")
+        logger.error(f"Ошибка при добавлении канала: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/channels/<channel_id>', methods=['DELETE'])
 def delete_channel(channel_id):
     try:
         if channel_id not in CHANNELS_SHEETS:
-            return jsonify({'error': 'Channel not found'}), 404
+            return jsonify({'error': 'Канал не найден'}), 404
             
         del CHANNELS_SHEETS[channel_id]
         return jsonify({'success': True})
     except Exception as e:
-        logger.error(f"Error deleting channel: {e}")
+        logger.error(f"Ошибка при удалении канала: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/schedule', methods=['GET'])
@@ -886,12 +950,12 @@ def get_schedule():
                     }
                     scheduled_posts.append(post_data)
         
-        # Sort by scheduled time
+        # Сортируем по времени публикации
         scheduled_posts.sort(key=lambda x: x['time'])
         
         return jsonify(scheduled_posts)
     except Exception as e:
-        logger.error(f"Error getting schedule: {e}")
+        logger.error(f"Ошибка при получении расписания: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/posts', methods=['POST'])
@@ -900,29 +964,29 @@ def create_post():
         data = request.json
         required_fields = ['channel_id', 'text', 'time']
         
-        # Validate required fields
+        # Проверяем обязательные поля
         for field in required_fields:
             if field not in data:
-                return jsonify({'error': f'Missing required field: {field}'}), 400
+                return jsonify({'error': f'Отсутствует обязательное поле: {field}'}), 400
         
         channel_id = data['channel_id']
         if channel_id not in CHANNELS_SHEETS:
-            return jsonify({'error': 'Invalid channel_id'}), 400
+            return jsonify({'error': 'Неверный channel_id'}), 400
             
-        # Parse and validate time
+        # Проверяем и преобразуем время
         try:
             post_time = datetime.fromisoformat(data['time'].replace('Z', '+00:00'))
             if post_time < datetime.now():
-                return jsonify({'error': 'Cannot schedule posts in the past'}), 400
+                return jsonify({'error': 'Нельзя запланировать публикацию в прошлом'}), 400
         except Exception as e:
-            return jsonify({'error': f'Invalid time format: {str(e)}'}), 400
+            return jsonify({'error': f'Неверный формат времени: {str(e)}'}), 400
             
-        # Validate photo URL if provided
+        # Проверяем URL фото, если оно есть
         photo_url = data.get('photo')
         if photo_url and not validate_image_url(photo_url):
-            return jsonify({'error': 'Invalid photo URL'}), 400
+            return jsonify({'error': 'Неверный URL изображения'}), 400
             
-        # Create post in sheet
+        # Создаем пост в таблице
         sheet_name = CHANNELS_SHEETS[channel_id]
         new_post = {
             'text': data['text'],
@@ -932,7 +996,7 @@ def create_post():
             'editor_confirm': True
         }
         
-        # Add post to sheet (implementation depends on your sheet structure)
+        # Добавляем пост в таблицу
         add_post_to_sheet(sheet_name, new_post)
         
         return jsonify({
@@ -947,22 +1011,22 @@ def create_post():
             }
         })
     except Exception as e:
-        logger.error(f"Error creating post: {e}")
+        logger.error(f"Ошибка при создании поста: {e}")
         return jsonify({'error': str(e)}), 500
 
 def add_post_to_sheet(sheet_name: str, post: Dict[str, Any]) -> None:
-    """Add a new post to the specified Google Sheet"""
+    """Добавляет новый пост в указанную Google таблицу"""
     try:
         service = build('sheets', 'v4', credentials=credentials)
         
-        # Get the next empty row
+        # Получаем следующую пустую строку
         result = service.spreadsheets().values().get(
             spreadsheetId=SPREADSHEET_ID,
             range=f'{sheet_name}!A:A'
         ).execute()
         next_row = len(result.get('values', [])) + 1
         
-        # Prepare values in the correct order for your sheet
+        # Подготавливаем значения в нужном порядке
         values = [
             [
                 post['text'],
@@ -985,8 +1049,150 @@ def add_post_to_sheet(sheet_name: str, post: Dict[str, Any]) -> None:
         ).execute()
         
     except Exception as e:
-        logger.error(f"Error adding post to sheet: {e}")
+        logger.error(f"Ошибка при добавлении поста в таблицу: {e}")
         raise
+
+@app.route('/api/feeds', methods=['GET'])
+def get_feeds():
+    """Получение списка лент"""
+    return jsonify(FEEDS)
+
+@app.route('/api/feeds/<feed_id>/items', methods=['GET'])
+def get_feed_items(feed_id):
+    """Получение записей из ленты"""
+    try:
+        if feed_id not in FEEDS:
+            return jsonify({'error': 'Лента не найдена'}), 404
+            
+        items = fetch_feed_items(FEEDS[feed_id])
+        return jsonify(items)
+    except Exception as e:
+        logger.error(f"Ошибка при получении записей ленты {feed_id}: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/feeds/<feed_id>/post', methods=['POST'])
+def create_post_from_feed(feed_id):
+    """Создание поста из записи в ленте"""
+    try:
+        data = request.json
+        required_fields = ['channel_id', 'item_link', 'scheduled_time']
+        
+        # Проверяем обязательные поля
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'error': f'Отсутствует обязательное поле: {field}'}), 400
+        
+        # Получаем запись из ленты
+        items = fetch_feed_items(FEEDS[feed_id])
+        item = next((item for item in items if item['link'] == data['item_link']), None)
+        
+        if not item:
+            return jsonify({'error': 'Запись не найдена'}), 404
+            
+        # Создаем пост
+        channel_id = data['channel_id']
+        if channel_id not in CHANNELS_SHEETS:
+            return jsonify({'error': 'Неверный channel_id'}), 400
+            
+        # Форматируем текст поста
+        post_text = f"{item['title']}\n\n{item['description']}\n\nИсточник: {item['link']}"
+        
+        # Создаем пост в таблице
+        sheet_name = CHANNELS_SHEETS[channel_id]
+        new_post = {
+            'text': post_text,
+            'photo': '',  # В RSS обычно нет изображений
+            'time': datetime.fromisoformat(data['scheduled_time']),
+            'state': 'ожидает',
+            'editor_confirm': True
+        }
+        
+        add_post_to_sheet(sheet_name, new_post)
+        
+        return jsonify({
+            'success': True,
+            'post': {
+                'channel_id': channel_id,
+                'text': new_post['text'],
+                'time': new_post['time'].isoformat(),
+                'state': new_post['state']
+            }
+        })
+    except Exception as e:
+        logger.error(f"Ошибка при создании поста из ленты: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/feeds', methods=['POST'])
+def add_feed():
+    """Добавление новой ленты"""
+    try:
+        data = request.json
+        required_fields = ['id', 'name', 'sources', 'keywords']
+        
+        # Проверяем обязательные поля
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'error': f'Отсутствует обязательное поле: {field}'}), 400
+                
+        feed_id = data['id']
+        if feed_id in FEEDS:
+            return jsonify({'error': 'Лента с таким ID уже существует'}), 400
+            
+        # Добавляем новую ленту
+        FEEDS[feed_id] = {
+            'name': data['name'],
+            'sources': data['sources'],
+            'keywords': data['keywords'],
+            'excluded_keywords': data.get('excluded_keywords', []),
+            'min_rating': data.get('min_rating', 0)
+        }
+        
+        return jsonify({
+            'success': True,
+            'feed': FEEDS[feed_id]
+        })
+    except Exception as e:
+        logger.error(f"Ошибка при добавлении ленты: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/feeds/<feed_id>', methods=['DELETE'])
+def delete_feed(feed_id):
+    """Удаление ленты"""
+    try:
+        if feed_id not in FEEDS:
+            return jsonify({'error': 'Лента не найдена'}), 404
+            
+        del FEEDS[feed_id]
+        return jsonify({'success': True})
+    except Exception as e:
+        logger.error(f"Ошибка при удалении ленты: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/feeds/<feed_id>', methods=['PUT'])
+def update_feed(feed_id):
+    """Обновление настроек ленты"""
+    try:
+        if feed_id not in FEEDS:
+            return jsonify({'error': 'Лента не найдена'}), 404
+            
+        data = request.json
+        
+        # Обновляем настройки ленты
+        FEEDS[feed_id].update({
+            'name': data.get('name', FEEDS[feed_id]['name']),
+            'sources': data.get('sources', FEEDS[feed_id]['sources']),
+            'keywords': data.get('keywords', FEEDS[feed_id]['keywords']),
+            'excluded_keywords': data.get('excluded_keywords', FEEDS[feed_id]['excluded_keywords']),
+            'min_rating': data.get('min_rating', FEEDS[feed_id]['min_rating'])
+        })
+        
+        return jsonify({
+            'success': True,
+            'feed': FEEDS[feed_id]
+        })
+    except Exception as e:
+        logger.error(f"Ошибка при обновлении ленты: {e}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     try:
@@ -1006,8 +1212,6 @@ if __name__ == '__main__':
         sock.close()
         
         logger.info(f"Запуск приложения на порту {port}")
-        logger.info(f"Путь к шаблонам: {TEMPLATE_DIR}")
-        logger.info(f"Путь к статическим файлам: {STATIC_DIR}")
         
         # Устанавливаем обработчик сигналов для корректного завершения
         def signal_handler(sig, frame):
@@ -1022,10 +1226,9 @@ if __name__ == '__main__':
         socketio.run(app, 
                     debug=False, 
                     host='0.0.0.0', 
-                    port=port, 
+                    port=port,
                     use_reloader=False,
-                    log_output=True,
-                    websocket=True)
+                    log_output=True)
     except Exception as e:
         logger.error(f"Ошибка при запуске приложения: {e}")
         raise 
