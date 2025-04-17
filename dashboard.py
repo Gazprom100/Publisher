@@ -400,40 +400,38 @@ def get_analytics_data() -> Dict[str, Any]:
 @app.route('/api/analytics')
 def get_analytics():
     try:
-        all_posts = []
-        for sheet_name in CHANNELS_SHEETS.values():
-            posts = get_posts_from_sheet(sheet_name)
-            all_posts.extend(posts)
-            
-        # Базовая статистика
-        now = datetime.now()
-        stats = {
-            'total_posts': len(all_posts),
-            'posts_today': len([p for p in all_posts if 
-                (now - p['time']).days == 0]),
-            'posts_week': len([p for p in all_posts if 
-                (now - p['time']).days <= 7]),
-            'posts_month': len([p for p in all_posts if 
-                (now - p['time']).days <= 30]),
-            'posts_with_photo': len([p for p in all_posts if p['photo']]),
-            'posts_by_channel': {},
-            'activity_by_hour': [0] * 24,
-            'posts': all_posts  # Добавляем сами посты для фронтенда
+        analytics_data = get_analytics_data()
+        
+        # Format data for frontend charts
+        activity_chart = {
+            'x': list(range(24)),
+            'y': [analytics_data['posts_by_hour'].get(h, 0) for h in range(24)],
+            'type': 'bar',
+            'name': 'Posts by Hour'
         }
         
-        # Статистика по каналам
-        for channel_id in CHANNELS_SHEETS.keys():
-            channel_posts = [p for p in all_posts if p.get('channel') == channel_id]
-            stats['posts_by_channel'][channel_id] = len(channel_posts)
-            
-        # Активность по часам
-        for post in all_posts:
-            hour = post['time'].hour
-            stats['activity_by_hour'][hour] += 1
-            
-        return jsonify(stats)
+        content_chart = {
+            'labels': ['With Photo', 'Text Only'],
+            'values': [
+                analytics_data['content_stats']['with_photo'],
+                analytics_data['content_stats']['text_only']
+            ],
+            'type': 'pie'
+        }
+        
+        return jsonify({
+            'summary': {
+                'total_posts': analytics_data['total_posts'],
+                'today': analytics_data['time_stats']['today'],
+                'week': analytics_data['time_stats']['week'],
+                'month': analytics_data['time_stats']['month']
+            },
+            'channel_stats': analytics_data['channel_stats'],
+            'activity_chart': activity_chart,
+            'content_chart': content_chart
+        })
     except Exception as e:
-        logger.error(f"Ошибка при получении аналитики: {e}")
+        logger.error(f"Error getting analytics: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/channel-health')
@@ -794,124 +792,201 @@ def get_post_suggestions_api():
 # Добавляем новые эндпоинты для управления каналами
 @app.route('/api/channels', methods=['GET'])
 def get_channels():
-    """Получение списка каналов"""
     try:
-        channels_info = {}
-        for channel_id, sheet_name in CHANNELS_SHEETS.items():
+        channels = {}
+        for channel_id in CHANNELS_SHEETS.keys():
             try:
-                # Получаем информацию о канале
-                chat_info = run_async(bot.get_chat(channel_id))
-                channels_info[channel_id] = {
-                    'sheet_name': sheet_name,
-                    'title': chat_info.title,
-                    'type': chat_info.type,
-                    'member_count': chat_info.member_count if hasattr(chat_info, 'member_count') else 0,
+                chat = run_async(bot.get_chat(channel_id))
+                channels[channel_id] = {
+                    'title': chat.title,
+                    'member_count': getattr(chat, 'member_count', 0),
+                    'sheet_name': CHANNELS_SHEETS[channel_id],
                     'status': 'active'
                 }
             except Exception as e:
-                channels_info[channel_id] = {
-                    'sheet_name': sheet_name,
-                    'error': str(e),
-                    'status': 'error'
+                logger.error(f"Error getting channel {channel_id} info: {e}")
+                channels[channel_id] = {
+                    'title': 'Unknown',
+                    'member_count': 0,
+                    'sheet_name': CHANNELS_SHEETS[channel_id],
+                    'status': 'error',
+                    'error': str(e)
                 }
-        return jsonify(channels_info)
+        return jsonify(channels)
     except Exception as e:
-        logger.error(f"Ошибка при получении списка каналов: {e}")
+        logger.error(f"Error getting channels: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/channels', methods=['POST'])
 def add_channel():
-    """Добавление нового канала"""
     try:
         data = request.json
         channel_id = data.get('channel_id')
         sheet_name = data.get('sheet_name')
         
         if not channel_id or not sheet_name:
-            return jsonify({'error': 'Необходимо указать channel_id и sheet_name'}), 400
+            return jsonify({'error': 'Missing channel_id or sheet_name'}), 400
             
-        # Проверяем существование канала
+        # Check if channel exists
         try:
-            chat_info = run_async(bot.get_chat(channel_id))
+            chat = run_async(bot.get_chat(channel_id))
+            # Check if bot has permission to post messages
+            member = run_async(bot.get_chat_member(channel_id, bot.id))
+            if not member.can_post_messages:
+                return jsonify({'error': 'Bot does not have permission to post in this channel'}), 403
         except Exception as e:
-            return jsonify({'error': f'Канал не найден или бот не имеет доступа: {str(e)}'}), 400
+            return jsonify({'error': f'Could not access channel: {str(e)}'}), 400
             
-        # Проверяем права бота в канале
-        try:
-            bot_member = run_async(bot.get_chat_member(channel_id, bot.id))
-            if not bot_member.can_post_messages:
-                return jsonify({'error': 'Бот не имеет прав на публикацию в канале'}), 400
-        except Exception as e:
-            return jsonify({'error': f'Ошибка проверки прав бота: {str(e)}'}), 400
-            
-        # Добавляем канал в конфигурацию
+        # Add to CHANNELS_SHEETS
         CHANNELS_SHEETS[channel_id] = sheet_name
         
-        # Создаем лист в Google Sheets, если его нет
-        try:
-            service.spreadsheets().values().get(
-                spreadsheetId=SPREADSHEET_ID,
-                range=f"'{sheet_name}'!A1"
-            ).execute()
-        except Exception:
-            # Создаем новый лист
-            try:
-                service.spreadsheets().batchUpdate(
-                    spreadsheetId=SPREADSHEET_ID,
-                    body={
-                        'requests': [{
-                            'addSheet': {
-                                'properties': {
-                                    'title': sheet_name,
-                                    'gridProperties': {
-                                        'rowCount': 1000,
-                                        'columnCount': 6
-                                    }
-                                }
-                            }
-                        }]
-                    }
-                ).execute()
-                
-                # Добавляем заголовки
-                service.spreadsheets().values().update(
-                    spreadsheetId=SPREADSHEET_ID,
-                    range=f"'{sheet_name}'!A1:F1",
-                    valueInputOption='RAW',
-                    body={
-                        'values': [['Дата', 'Время', 'Фото', 'Текст', 'Подтверждено', 'Статус']]
-                    }
-                ).execute()
-            except Exception as e:
-                return jsonify({'error': f'Ошибка создания листа: {str(e)}'}), 500
-                
         return jsonify({
             'success': True,
             'channel': {
-                'id': channel_id,
-                'title': chat_info.title,
-                'sheet_name': sheet_name
+                'title': chat.title,
+                'member_count': getattr(chat, 'member_count', 0),
+                'sheet_name': sheet_name,
+                'status': 'active'
             }
         })
-        
     except Exception as e:
-        logger.error(f"Ошибка при добавлении канала: {e}")
+        logger.error(f"Error adding channel: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/channels/<channel_id>', methods=['DELETE'])
 def delete_channel(channel_id):
-    """Удаление канала"""
     try:
         if channel_id not in CHANNELS_SHEETS:
-            return jsonify({'error': 'Канал не найден'}), 404
+            return jsonify({'error': 'Channel not found'}), 404
             
-        sheet_name = CHANNELS_SHEETS[channel_id]
         del CHANNELS_SHEETS[channel_id]
-        
-        return jsonify({'success': True, 'message': f'Канал {channel_id} удален'})
+        return jsonify({'success': True})
     except Exception as e:
-        logger.error(f"Ошибка при удалении канала: {e}")
+        logger.error(f"Error deleting channel: {e}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/schedule', methods=['GET'])
+def get_schedule():
+    try:
+        now = datetime.now()
+        scheduled_posts = []
+        
+        for channel_id, sheet_name in CHANNELS_SHEETS.items():
+            posts = get_posts_from_sheet(sheet_name)
+            for post in posts:
+                if post['time'] > now and post['state'].lower() == 'ожидает':
+                    post_data = {
+                        'id': post.get('id', ''),
+                        'channel_id': channel_id,
+                        'text': post['text'],
+                        'photo': post['photo'],
+                        'time': post['time'].isoformat(),
+                        'editor_confirm': post['editor_confirm'],
+                        'state': post['state']
+                    }
+                    scheduled_posts.append(post_data)
+        
+        # Sort by scheduled time
+        scheduled_posts.sort(key=lambda x: x['time'])
+        
+        return jsonify(scheduled_posts)
+    except Exception as e:
+        logger.error(f"Error getting schedule: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/posts', methods=['POST'])
+def create_post():
+    try:
+        data = request.json
+        required_fields = ['channel_id', 'text', 'time']
+        
+        # Validate required fields
+        for field in required_fields:
+            if field not in data:
+                return jsonify({'error': f'Missing required field: {field}'}), 400
+        
+        channel_id = data['channel_id']
+        if channel_id not in CHANNELS_SHEETS:
+            return jsonify({'error': 'Invalid channel_id'}), 400
+            
+        # Parse and validate time
+        try:
+            post_time = datetime.fromisoformat(data['time'].replace('Z', '+00:00'))
+            if post_time < datetime.now():
+                return jsonify({'error': 'Cannot schedule posts in the past'}), 400
+        except Exception as e:
+            return jsonify({'error': f'Invalid time format: {str(e)}'}), 400
+            
+        # Validate photo URL if provided
+        photo_url = data.get('photo')
+        if photo_url and not validate_image_url(photo_url):
+            return jsonify({'error': 'Invalid photo URL'}), 400
+            
+        # Create post in sheet
+        sheet_name = CHANNELS_SHEETS[channel_id]
+        new_post = {
+            'text': data['text'],
+            'photo': photo_url,
+            'time': post_time,
+            'state': 'ожидает',
+            'editor_confirm': True
+        }
+        
+        # Add post to sheet (implementation depends on your sheet structure)
+        add_post_to_sheet(sheet_name, new_post)
+        
+        return jsonify({
+            'success': True,
+            'post': {
+                'channel_id': channel_id,
+                'text': new_post['text'],
+                'photo': new_post['photo'],
+                'time': new_post['time'].isoformat(),
+                'state': new_post['state'],
+                'editor_confirm': new_post['editor_confirm']
+            }
+        })
+    except Exception as e:
+        logger.error(f"Error creating post: {e}")
+        return jsonify({'error': str(e)}), 500
+
+def add_post_to_sheet(sheet_name: str, post: Dict[str, Any]) -> None:
+    """Add a new post to the specified Google Sheet"""
+    try:
+        service = build('sheets', 'v4', credentials=credentials)
+        
+        # Get the next empty row
+        result = service.spreadsheets().values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f'{sheet_name}!A:A'
+        ).execute()
+        next_row = len(result.get('values', [])) + 1
+        
+        # Prepare values in the correct order for your sheet
+        values = [
+            [
+                post['text'],
+                post['photo'] if post['photo'] else '',
+                post['time'].strftime('%Y-%m-%d %H:%M:%S'),
+                post['state'],
+                'TRUE' if post['editor_confirm'] else 'FALSE'
+            ]
+        ]
+        
+        body = {
+            'values': values
+        }
+        
+        service.spreadsheets().values().append(
+            spreadsheetId=SPREADSHEET_ID,
+            range=f'{sheet_name}!A{next_row}',
+            valueInputOption='USER_ENTERED',
+            body=body
+        ).execute()
+        
+    except Exception as e:
+        logger.error(f"Error adding post to sheet: {e}")
+        raise
 
 if __name__ == '__main__':
     try:
