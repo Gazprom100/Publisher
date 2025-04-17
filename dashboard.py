@@ -28,7 +28,12 @@ app = Flask(__name__,
 socketio = SocketIO(app, async_mode='gevent', cors_allowed_origins='*')
 
 # Загрузка конфигурации из переменных окружения
-SERVICE_ACCOUNT_FILE = os.getenv("SERVICE_ACCOUNT_FILE", "service_account.json")
+SERVICE_ACCOUNT_INFO = os.getenv("SERVICE_ACCOUNT_INFO")
+if SERVICE_ACCOUNT_INFO:
+    SERVICE_ACCOUNT_DICT = json.loads(SERVICE_ACCOUNT_INFO)
+else:
+    SERVICE_ACCOUNT_DICT = None
+
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID", "1FUoF6V9whpPMfEml__rpqmGKPs5ohhLUI1s7D1N0SG8")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8006930667:AAHHpNFS3ySj8hzteC-mmg0YBtHnSf8jREs")
 
@@ -40,9 +45,23 @@ CHANNELS_SHEETS = {
 
 # Инициализация сервиса Google Sheets
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-credentials = service_account.Credentials.from_service_account_file(
-    SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-service = build('sheets', 'v4', credentials=credentials)
+
+if SERVICE_ACCOUNT_DICT:
+    credentials = service_account.Credentials.from_service_account_info(
+        SERVICE_ACCOUNT_DICT, scopes=SCOPES)
+else:
+    try:
+        credentials = service_account.Credentials.from_service_account_file(
+            'service_account.json', scopes=SCOPES)
+    except FileNotFoundError:
+        print("ВНИМАНИЕ: Файл service_account.json не найден и SERVICE_ACCOUNT_INFO не установлен!")
+        credentials = None
+
+if credentials:
+    service = build('sheets', 'v4', credentials=credentials)
+else:
+    service = None
+    print("Google Sheets API не инициализирован из-за отсутствия учетных данных")
 
 # Инициализация Telegram бота
 bot = Bot(token=TELEGRAM_TOKEN)
@@ -124,10 +143,14 @@ def index():
 
 @app.route('/health')
 def health_check():
+    if not service:
+        return 'Google Sheets API не инициализирован', 500
     return 'OK', 200
 
 @app.route('/api/posts')
 def get_posts():
+    if not service:
+        return jsonify({'error': 'Google Sheets API не инициализирован'}), 500
     try:
         all_posts = []
         for sheet_name in CHANNELS_SHEETS.values():
