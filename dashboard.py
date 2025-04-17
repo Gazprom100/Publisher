@@ -87,7 +87,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "8006930667:AAHHpNFS3ySj8hzteC-mmg0
 
 # Конфигурация каналов
 CHANNELS_SHEETS = {
-    "@KConsult_ing": "K.Consulting",
+    "@KConsult_ing": "K",
     "@Vegzzzbaj": "Vegzzzbaj"
 }
 
