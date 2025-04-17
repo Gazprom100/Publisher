@@ -1,5 +1,5 @@
 from flask import Flask, render_template, jsonify, request, send_from_directory
-from flask_socketio import SocketIO
+from flask_socketio import SocketIO, emit
 import json
 import os
 from datetime import datetime, timedelta
@@ -28,10 +28,10 @@ import eventlet
 import sys
 import signal
 
-# Настройка логирования
+# Настройка логирования с более подробной информацией
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.DEBUG,  # Изменено на DEBUG для более подробного логирования
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s - %(pathname)s:%(lineno)d',
     handlers=[
         logging.FileHandler('dashboard.log'),
         logging.StreamHandler()
@@ -58,8 +58,8 @@ STATIC_DIR = os.path.join(BASE_DIR, 'static')
 os.makedirs(TEMPLATE_DIR, exist_ok=True)
 os.makedirs(STATIC_DIR, exist_ok=True)
 
-# Инициализация eventlet
-eventlet.monkey_patch(socket=True, select=True)
+# Инициализация eventlet до создания приложения
+eventlet.monkey_patch(socket=True, select=True, thread=False)
 
 app = Flask(__name__, 
             template_folder=TEMPLATE_DIR,
@@ -73,28 +73,51 @@ socketio = SocketIO(
     cors_allowed_origins='*',
     logger=True,
     engineio_logger=True,
-    ping_timeout=5000,
-    ping_interval=25000,
+    ping_timeout=60000,  # Увеличено до 60 секунд
+    ping_interval=25000,  # Увеличено до 25 секунд
     max_http_buffer_size=1000000,
     manage_session=True,
     always_connect=True,
-    transports=['websocket', 'polling']
+    transports=['websocket', 'polling'],
+    async_handlers=True,
+    reconnection_attempts=5,
+    reconnection_delay=1000,
+    reconnection_delay_max=5000,
+    path='/socket.io'  # Явно указываем путь
 )
 
-# Обработчики событий Socket.IO
+# Обновленные обработчики событий Socket.IO
 @socketio.on('connect')
 def handle_connect():
-    logger.info(f"Client connected: {request.sid}")
-    # Отправляем начальные данные при подключении
-    emit('connection_established', {'status': 'connected'})
+    """Обработчик подключения клиента"""
+    try:
+        logger.info(f"Client connected: {request.sid}")
+        # Отправляем начальные данные при подключении
+        emit('connection_established', {'status': 'connected', 'sid': request.sid})
+    except Exception as e:
+        logger.error(f"Error in handle_connect: {str(e)}", exc_info=True)
+        emit('error', {'message': str(e)})
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    logger.info(f"Client disconnected: {request.sid}")
+    """Обработчик отключения клиента"""
+    try:
+        logger.info(f"Client disconnected: {request.sid}")
+    except Exception as e:
+        logger.error(f"Error in handle_disconnect: {str(e)}", exc_info=True)
+
+@socketio.on('ping')
+def handle_ping():
+    """Обработчик пинга от клиента"""
+    try:
+        emit('pong', {'timestamp': datetime.now().isoformat()})
+    except Exception as e:
+        logger.error(f"Error in handle_ping: {str(e)}", exc_info=True)
 
 @socketio.on_error_default
 def default_error_handler(e):
-    logger.error(f"Socket.IO error: {str(e)}")
+    """Обработчик ошибок Socket.IO по умолчанию"""
+    logger.error(f"Socket.IO error: {str(e)}", exc_info=True)
     if hasattr(e, 'args') and len(e.args) > 0:
         error_message = str(e.args[0])
     else:
@@ -103,6 +126,7 @@ def default_error_handler(e):
 
 @socketio.on_error('/api/analytics')
 def analytics_error_handler(e):
+    """Обработчик ошибок для эндпоинта аналитики"""
     logger.error(f"Error in analytics endpoint: {str(e)}")
     emit('analytics_error', {'message': str(e)})
 
@@ -1189,9 +1213,10 @@ if __name__ == '__main__':
             debug=False,
             use_reloader=False,
             log_output=True,
-            allow_unsafe_werkzeug=True,  # Для работы с eventlet
-            websocket=True
+            allow_unsafe_werkzeug=True,
+            websocket=True,
+            cors_allowed_origins='*'
         )
     except Exception as e:
-        logger.error(f"Ошибка при запуске приложения: {e}")
+        logger.error(f"Ошибка при запуске приложения: {e}", exc_info=True)
         raise 

@@ -3,95 +3,174 @@
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Инициализация всех компонентов после загрузки DOM
+        let reconnectAttempts = 0;
+        const MAX_RECONNECT_ATTEMPTS = 5;
+        let pingInterval;
+        let socket;
+
+        function initializeSocket() {
+            // Инициализация Socket.IO с обработкой ошибок
+            socket = io({
+                path: '/socket.io',
+                transports: ['websocket', 'polling'],
+                upgrade: true,
+                rememberUpgrade: true,
+                timeout: 60000,  // Увеличено до 60 секунд
+                reconnection: true,
+                reconnectionAttempts: MAX_RECONNECT_ATTEMPTS,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000,
+                autoConnect: true,
+                forceNew: true,
+                pingTimeout: 60000,  // Увеличено до 60 секунд
+                pingInterval: 25000,  // Увеличено до 25 секунд
+                query: {
+                    timestamp: Date.now()  // Предотвращаем кэширование
+                }
+            });
+
+            // Обработчики событий Socket.IO
+            socket.on('connect', () => {
+                console.log('Connected to server');
+                reconnectAttempts = 0;
+                updateConnectionStatus('connected');
+                startPingInterval();
+                
+                // Запрашиваем начальные данные
+                updateAnalytics();
+                updateChannelHealth();
+                updateSchedule();
+            });
+
+            socket.on('disconnect', (reason) => {
+                console.log('Disconnected from server:', reason);
+                updateConnectionStatus('disconnected');
+                stopPingInterval();
+
+                if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                    reconnectAttempts++;
+                    console.log(`Attempting to reconnect (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+                    setTimeout(() => {
+                        socket.connect();
+                    }, 1000 * Math.min(reconnectAttempts * 2, 10));  // Экспоненциальная задержка
+                } else {
+                    showError('Превышено максимальное количество попыток переподключения. Обновите страницу.');
+                }
+            });
+
+            socket.on('connect_error', (error) => {
+                console.error('Connection error:', error);
+                updateConnectionStatus('error', error.message);
+                stopPingInterval();
+
+                // Попытка переключения на polling при ошибке websocket
+                if (socket.io.engine.transport.name === 'websocket') {
+                    console.log('WebSocket connection failed, falling back to polling');
+                    socket.io.engine.transport.name = 'polling';
+                    socket.connect();
+                }
+            });
+
+            socket.on('error', (error) => {
+                console.error('Socket error:', error);
+                updateConnectionStatus('error', error.message);
+            });
+
+            socket.on('pong', (data) => {
+                console.log('Received pong:', data);
+                updateConnectionStatus('connected');
+            });
+
+            socket.on('connection_established', (data) => {
+                console.log('Connection established:', data);
+                updateConnectionStatus('connected');
+                // Запрашиваем начальные данные
+                updateAnalytics();
+                updateChannelHealth();
+                updateSchedule();
+            });
+
+            // Добавляем обработчик для отслеживания состояния подключения
+            socket.io.on("reconnect_attempt", (attempt) => {
+                console.log(`Reconnection attempt ${attempt}`);
+                updateConnectionStatus('reconnecting');
+            });
+
+            socket.io.on("reconnect_failed", () => {
+                console.log('Reconnection failed');
+                updateConnectionStatus('error', 'Не удалось восстановить подключение');
+                showError('Не удалось восстановить подключение к серверу. Пожалуйста, обновите страницу.');
+            });
+        }
+
+        function startPingInterval() {
+            stopPingInterval(); // Очищаем предыдущий интервал, если он существует
+            pingInterval = setInterval(() => {
+                if (socket && socket.connected) {
+                    socket.emit('ping');
+                }
+            }, 25000);  // Увеличено до 25 секунд
+        }
+
+        function stopPingInterval() {
+            if (pingInterval) {
+                clearInterval(pingInterval);
+                pingInterval = null;
+            }
+        }
+
+        // Инициализация всех компонентов
         const refreshButton = document.getElementById('refreshData');
         if (refreshButton) {
             refreshButton.addEventListener('click', function() {
-                if (socket.connected) {
+                if (socket && socket.connected) {
                     updateAnalytics();
                     updateChannelHealth();
                     updateSchedule();
                 } else {
                     showError('Нет подключения к серверу');
-                    socket.connect();
+                    if (socket) {
+                        socket.connect();
+                    } else {
+                        initializeSocket();
+                    }
                 }
             });
         }
 
-        // Инициализация Socket.IO с обработкой ошибок
-        const socket = io({
-            transports: ['websocket', 'polling'],
-            upgrade: true,
-            rememberUpgrade: true,
-            timeout: 5000,
-            reconnection: true,
-            reconnectionAttempts: 5,
-            reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000,
-            autoConnect: true,
-            forceNew: true
-        });
-
-        // Обработчики событий Socket.IO
-        socket.on('connect', () => {
-            console.log('Connected to server');
-            updateConnectionStatus('connected');
-        });
-
-        socket.on('disconnect', (reason) => {
-            console.log('Disconnected from server:', reason);
-            updateConnectionStatus('disconnected');
-        });
-
-        socket.on('connect_error', (error) => {
-            console.error('Connection error:', error);
-            updateConnectionStatus('error', error.message);
-        });
-
-        socket.on('error', (error) => {
-            console.error('Socket error:', error);
-            updateConnectionStatus('error', error.message);
-        });
-
-        socket.on('connection_established', (data) => {
-            console.log('Connection established:', data);
-            updateConnectionStatus('connected');
-            // Запрашиваем начальные данные
-            updateAnalytics();
-            updateChannelHealth();
-            updateSchedule();
-        });
-
-        socket.on('analytics_error', (error) => {
-            console.error('Analytics error:', error);
-            showError('Ошибка при получении аналитики: ' + error.message);
-        });
-
-        socket.on('posts_update', (data) => {
-            console.log('Received posts update:', data);
-            if (data && data.posts) {
-                updateDashboard(data.posts);
-            }
-        });
-
         // Функция обновления статуса соединения
         function updateConnectionStatus(status, message = '') {
             const statusElement = document.getElementById('connection-status');
-            if (!statusElement) return;
+            if (!statusElement) {
+                const statusContainer = document.createElement('div');
+                statusContainer.id = 'connection-status-container';
+                statusContainer.className = 'position-fixed bottom-0 end-0 p-3';
+                statusContainer.style.zIndex = '1000';
+                
+                const statusBadge = document.createElement('div');
+                statusBadge.id = 'connection-status';
+                statusBadge.className = 'badge';
+                
+                statusContainer.appendChild(statusBadge);
+                document.body.appendChild(statusContainer);
+            }
 
-            statusElement.className = 'connection-status';
+            const element = document.getElementById('connection-status');
+            if (!element) return;
+
+            element.className = 'badge';
             switch (status) {
                 case 'connected':
-                    statusElement.textContent = 'Подключено';
-                    statusElement.classList.add('text-success');
+                    element.textContent = 'Подключено';
+                    element.classList.add('bg-success');
                     break;
                 case 'disconnected':
-                    statusElement.textContent = 'Отключено';
-                    statusElement.classList.add('text-danger');
+                    element.textContent = 'Отключено';
+                    element.classList.add('bg-danger');
                     break;
                 case 'error':
-                    statusElement.textContent = `Ошибка: ${message}`;
-                    statusElement.classList.add('text-danger');
+                    element.textContent = `Ошибка: ${message}`;
+                    element.classList.add('bg-danger');
                     break;
             }
         }
@@ -124,12 +203,15 @@
 
         // Автоматическое обновление данных
         setInterval(() => {
-            if (socket.connected) {
+            if (socket && socket.connected) {
                 updateAnalytics();
                 updateChannelHealth();
                 updateSchedule();
             }
         }, 300000); // Каждые 5 минут
+
+        // Запускаем инициализацию Socket.IO
+        initializeSocket();
     });
 
     // Функция обновления аналитики
