@@ -435,36 +435,28 @@ def get_analytics():
         total_posts = len([post for post in all_posts if post['state'] == 'выложен'])
         
         # Готовим данные по активности
-        activity_data = defaultdict(int)
+        activity_by_hour = {}
+        for hour in range(24):
+            activity_by_hour[str(hour)] = 0
+            
         for post in all_posts:
             if post['state'] == 'выложен':
-                hour = post['time'].hour
-                activity_data[hour] += 1
-        
-        # Преобразуем в список для графика
-        hours = list(range(24))
-        activity = [activity_data[hour] for hour in hours]
+                hour = str(post['time'].hour)
+                activity_by_hour[hour] += 1
         
         # Типы контента (пока просто наличие фото)
-        with_photo = len([post for post in all_posts if post['photo'] and post['state'] == 'выложен'])
-        without_photo = total_posts - with_photo
+        posts_with_photo = len([post for post in all_posts if post['photo'] and post['state'] == 'выложен'])
+        posts_without_photo = total_posts - posts_with_photo
         
         return jsonify({
             'success': True,
-            'data': {
-                'total_posts': total_posts,
-                'posts_today': posts_today,
-                'active_channels': active_channels,
-                'total_reach': total_reach,
-                'activity': {
-                    'hours': hours,
-                    'counts': activity
-                },
-                'content_types': {
-                    'with_photo': with_photo,
-                    'without_photo': without_photo
-                }
-            }
+            'total_posts': total_posts,
+            'posts_today': posts_today,
+            'active_channels': active_channels,
+            'total_reach': total_reach,
+            'activity_by_hour': activity_by_hour,
+            'posts_with_photo': posts_with_photo,
+            'posts_without_photo': posts_without_photo
         })
         
     except Exception as e:
