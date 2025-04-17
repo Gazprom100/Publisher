@@ -18,10 +18,14 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 TEMPLATE_DIR = os.path.join(BASE_DIR, 'templates')
 STATIC_DIR = os.path.join(BASE_DIR, 'static')
 
+# Создаем директории, если они не существуют
+os.makedirs(TEMPLATE_DIR, exist_ok=True)
+os.makedirs(STATIC_DIR, exist_ok=True)
+
 app = Flask(__name__, 
             template_folder=TEMPLATE_DIR,
             static_folder=STATIC_DIR)
-socketio = SocketIO(app, async_mode='eventlet')
+socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins='*')
 
 # Загрузка конфигурации из переменных окружения
 SERVICE_ACCOUNT_FILE = os.getenv("SERVICE_ACCOUNT_FILE", "service_account.json")
@@ -220,19 +224,15 @@ def publish_posts_all_channels():
                 except Exception as e:
                     print(f"Ошибка при публикации для канала {channel_id}: {e}")
 
+# Запуск фоновых задач
+socketio.start_background_task(background_tasks)
+
+# Запуск планировщика для автоматической публикации
+scheduler = BackgroundScheduler(timezone=pytz.utc)
+scheduler.add_job(publish_posts_all_channels, 'interval', minutes=1)
+scheduler.start()
+
 if __name__ == '__main__':
-    # Создаем директории, если они не существуют
-    os.makedirs(TEMPLATE_DIR, exist_ok=True)
-    os.makedirs(STATIC_DIR, exist_ok=True)
-    
-    # Запуск фоновых задач
-    socketio.start_background_task(background_tasks)
-    
-    # Запуск планировщика для автоматической публикации
-    scheduler = BackgroundScheduler(timezone=pytz.utc)
-    scheduler.add_job(publish_posts_all_channels, 'interval', minutes=1)
-    scheduler.start()
-    
     # Запуск Flask приложения
     port = int(os.environ.get('PORT', 5000))
     print(f"Запуск приложения на порту {port}")
