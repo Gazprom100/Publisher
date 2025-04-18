@@ -173,8 +173,15 @@ asyncio.set_event_loop(global_loop)
 def run_async(coro):
     return global_loop.run_until_complete(coro)
 
-def get_range_name(sheet_name):
-    return f"'{sheet_name}'!A2:F"
+def get_range_name(sheet_name: str) -> str:
+    """
+    Формирует корректное имя диапазона для Google Sheets API.
+    Экранирует специальные символы в названии листа.
+    """
+    # Экранируем одинарные кавычки в названии листа
+    escaped_name = sheet_name.replace("'", "\\'")
+    # Оборачиваем название листа в одинарные кавычки
+    return f"'{escaped_name}'!A2:F"
 
 def get_posts_from_sheet(sheet_name: str) -> List[Dict[str, Any]]:
     """Получает посты из листа Google Sheets"""

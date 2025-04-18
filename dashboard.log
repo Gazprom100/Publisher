@@ -15,3 +15,35 @@
 2025-04-17 13:41:26,583 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts
 2025-04-17 13:41:26,584 - apscheduler.scheduler - INFO - Added job "publish_posts_all_channels" to job store "default"
 2025-04-17 13:41:26,584 - apscheduler.scheduler - INFO - Scheduler started
+2025-04-18 12:30:56,778 - __main__ - WARNING - Не удалось подключиться к Redis: Error 61 connecting to localhost:6379. ECONNREFUSED.. Кэширование будет отключено. - /Users/evgenikrasnov/Desktop/GitHub/Publisher/dashboard.py:51
+2025-04-18 12:30:56,792 - engineio.server - INFO - Server initialized for eventlet. - /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/engineio/base_server.py:112
+2025-04-18 12:30:56,792 - telegram.Bot - DEBUG - Set Bot API URL: https://api.telegram.org/bot8006930667:AAHHpNFS3ySj8hzteC-mmg0YBtHnSf8jREs - /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/telegram/_bot.py:326
+2025-04-18 12:30:56,792 - telegram.Bot - DEBUG - Set Bot API File URL: https://api.telegram.org/file/bot8006930667:AAHHpNFS3ySj8hzteC-mmg0YBtHnSf8jREs - /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/telegram/_bot.py:327
+2025-04-18 12:30:57,213 - asyncio - DEBUG - Using selector: SelectSelector - /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/selector_events.py:64
+2025-04-18 12:30:57,218 - apscheduler.scheduler - INFO - Adding job tentatively -- it will be properly scheduled when the scheduler starts - /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/apscheduler/schedulers/base.py:507
+2025-04-18 12:30:57,219 - apscheduler.scheduler - INFO - Added job "publish_posts_all_channels" to job store "default" - /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/apscheduler/schedulers/base.py:1090
+2025-04-18 12:30:57,219 - apscheduler.scheduler - INFO - Scheduler started - /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/apscheduler/schedulers/base.py:214
+2025-04-18 12:30:57,220 - apscheduler.scheduler - DEBUG - Looking for jobs to run - /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/apscheduler/schedulers/base.py:1151
+2025-04-18 12:30:57,220 - apscheduler.scheduler - DEBUG - Next wakeup is due at 2025-04-18 09:31:57.217757+00:00 (in 59.997450 seconds) - /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/apscheduler/schedulers/base.py:1258
+2025-04-18 12:30:57,220 - __main__ - INFO - Планировщик успешно запущен - /Users/evgenikrasnov/Desktop/GitHub/Publisher/dashboard.py:437
+2025-04-18 12:30:57,228 - __main__ - INFO - Запуск приложения на порту 10000 - /Users/evgenikrasnov/Desktop/GitHub/Publisher/dashboard.py:1236
+2025-04-18 12:30:57,229 - __main__ - ERROR - Google Sheets API не инициализирован - /Users/evgenikrasnov/Desktop/GitHub/Publisher/dashboard.py:189
+2025-04-18 12:30:57,229 - __main__ - ERROR - Google Sheets API не инициализирован - /Users/evgenikrasnov/Desktop/GitHub/Publisher/dashboard.py:189
+2025-04-18 12:31:57,220 - apscheduler.scheduler - DEBUG - Looking for jobs to run - /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/apscheduler/schedulers/base.py:1151
+2025-04-18 12:31:57,228 - apscheduler.executors.default - INFO - Running job "publish_posts_all_channels (trigger: interval[0:01:00], next run at: 2025-04-18 09:31:57 UTC)" (scheduled at 2025-04-18 09:31:57.217757+00:00) - /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/apscheduler/executors/base.py:129
+2025-04-18 12:31:57,228 - __main__ - INFO - Запуск проверки публикаций в 2025-04-18 12:31:57.228778 - /Users/evgenikrasnov/Desktop/GitHub/Publisher/dashboard.py:387
+2025-04-18 12:31:57,228 - __main__ - ERROR - Google Sheets API не инициализирован - /Users/evgenikrasnov/Desktop/GitHub/Publisher/dashboard.py:189
+2025-04-18 12:31:57,229 - __main__ - ERROR - Google Sheets API не инициализирован - /Users/evgenikrasnov/Desktop/GitHub/Publisher/dashboard.py:189
+2025-04-18 12:31:57,229 - apscheduler.executors.default - INFO - Job "publish_posts_all_channels (trigger: interval[0:01:00], next run at: 2025-04-18 09:31:57 UTC)" executed successfully - /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/apscheduler/executors/base.py:156
+2025-04-18 12:31:57,231 - apscheduler.scheduler - DEBUG - Next wakeup is due at 2025-04-18 09:32:57.217757+00:00 (in 59.986387 seconds) - /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/apscheduler/schedulers/base.py:1258
+2025-04-18 12:31:57,231 - __main__ - ERROR - Google Sheets API не инициализирован - /Users/evgenikrasnov/Desktop/GitHub/Publisher/dashboard.py:189
+2025-04-18 12:31:57,231 - __main__ - ERROR - Google Sheets API не инициализирован - /Users/evgenikrasnov/Desktop/GitHub/Publisher/dashboard.py:189
+2025-04-18 12:32:57,219 - apscheduler.scheduler - DEBUG - Looking for jobs to run - /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/apscheduler/schedulers/base.py:1151
+2025-04-18 12:32:57,225 - apscheduler.scheduler - DEBUG - Next wakeup is due at 2025-04-18 09:33:57.217757+00:00 (in 59.992515 seconds) - /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/apscheduler/schedulers/base.py:1258
+2025-04-18 12:32:57,233 - apscheduler.executors.default - INFO - Running job "publish_posts_all_channels (trigger: interval[0:01:00], next run at: 2025-04-18 09:33:57 UTC)" (scheduled at 2025-04-18 09:32:57.217757+00:00) - /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/apscheduler/executors/base.py:129
+2025-04-18 12:32:57,234 - __main__ - INFO - Запуск проверки публикаций в 2025-04-18 12:32:57.234526 - /Users/evgenikrasnov/Desktop/GitHub/Publisher/dashboard.py:387
+2025-04-18 12:32:57,235 - __main__ - ERROR - Google Sheets API не инициализирован - /Users/evgenikrasnov/Desktop/GitHub/Publisher/dashboard.py:189
+2025-04-18 12:32:57,235 - __main__ - ERROR - Google Sheets API не инициализирован - /Users/evgenikrasnov/Desktop/GitHub/Publisher/dashboard.py:189
+2025-04-18 12:32:57,235 - apscheduler.executors.default - INFO - Job "publish_posts_all_channels (trigger: interval[0:01:00], next run at: 2025-04-18 09:33:57 UTC)" executed successfully - /Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/site-packages/apscheduler/executors/base.py:156
+2025-04-18 12:32:57,235 - __main__ - ERROR - Google Sheets API не инициализирован - /Users/evgenikrasnov/Desktop/GitHub/Publisher/dashboard.py:189
+2025-04-18 12:32:57,236 - __main__ - ERROR - Google Sheets API не инициализирован - /Users/evgenikrasnov/Desktop/GitHub/Publisher/dashboard.py:189

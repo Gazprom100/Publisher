@@ -1,4 +1,4 @@
-#!/Users/evgenikrasnov/Desktop/GitHub/Publisher/venv/bin/python3.11
+#!/Users/evgenikrasnov/Desktop/GitHub/Publisher/venv/bin/python3.13
 # -*- coding: utf-8 -*-
 import re
 import sys
